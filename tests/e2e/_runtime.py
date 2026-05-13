@@ -91,9 +91,9 @@ def ingest_jsonline_stamp_now(
       every event so multiple datasets in the same VL can be query-scoped
       apart by wrapping ``dataset_label:="<label>" AND (...)``.
     """
-    from datetime import UTC, datetime
+    from datetime import datetime, timezone
 
-    now = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     out_lines: list[bytes] = []
     for line in path.read_bytes().splitlines():
         if not line.strip():

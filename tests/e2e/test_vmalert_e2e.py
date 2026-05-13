@@ -34,7 +34,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -366,7 +366,7 @@ def _suricata_flow_event(now: datetime, src_ip: str, dest_ip: str, offset: int) 
 
 def test_positive_caddy_web_shell(loaded_rules: None, vl_url: str) -> None:
     """Caddy rule fires when a request hits a known web-shell path."""
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     events = [_caddy_shell_event(now, i) for i in range(3)]
     _ingest_ndjson(vl_url, events, stream_field="logger")
     alert = _wait_for_alert("Caddy_synth_web_shell_access")
@@ -383,7 +383,7 @@ def test_positive_journald_curl_pipe_to_shell(
     vl_url: str,
 ) -> None:
     """Linux rule fires on `curl -fsSL | sh` patterns."""
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     events = [_journald_curlsh_event(now, i) for i in range(3)]
     _ingest_ndjson(vl_url, events, stream_field="SYSLOG_IDENTIFIER")
     alert = _wait_for_alert("Linux_synth_curl_pipe_to_shell")
@@ -396,7 +396,7 @@ def test_positive_suricata_host_scan_correlation(
     vl_url: str,
 ) -> None:
     """Stats / correlation rule fires when one src hits >= 5 distinct dests."""
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     src = "192.0.2.99"
     events = [_suricata_flow_event(now, src, f"203.0.113.{i + 1}", i) for i in range(8)]
     _ingest_ndjson(vl_url, events, stream_field="event_type")
@@ -448,7 +448,7 @@ def test_negative_journald_rule_does_not_fire_on_caddy_data(
     _reload_vmalert()
     time.sleep(2.0)
 
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     events = [_caddy_shell_event(now, 1000 + i) for i in range(3)]
     _ingest_ndjson(vl_url, events, stream_field="logger")
 
