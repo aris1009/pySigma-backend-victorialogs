@@ -314,8 +314,8 @@ datasets:
     sha256: 9b003ec95f552dcfe7952c451212b78f2d585197e2ae2a990d9e815f23c15298
     target: synth/journald_attack.ndjson
     description: |
-      5000-event journald attack-mix dataset for the journald e2e harness
-     . ~40% of events plant verbatim SigmaHQ Linux
+      5000-event journald attack-mix dataset for the journald e2e harness.
+      ~40% of events plant verbatim SigmaHQ Linux
       keyword-rule strings into MESSAGE; positive expectations in
       e2e/expectations_journald.yml assert public Sigma rules fire
       against this NDJSON.
