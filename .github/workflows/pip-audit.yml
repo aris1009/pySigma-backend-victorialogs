@@ -39,3 +39,6 @@ jobs:
         with:
           inputs: requirements.txt
           vulnerability-service: osv
+          # diskcache transitively via pysigma. Drop once
+          # https://github.com/grantjenks/python-diskcache/pull/361 ships.
+          ignore-vulns: CVE-2025-69872
