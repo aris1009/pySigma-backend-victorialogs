@@ -261,7 +261,7 @@ class VictoriaLogsBackend(TextQueryBackend):
         self,
         rule: SigmaRule,
         query: str,
-        index: int,
+        _index: int,
         state: ConversionState,
     ) -> dict[str, Any]:
         """Render one Sigma rule as a vmalert rule dict (type: vlogs).
