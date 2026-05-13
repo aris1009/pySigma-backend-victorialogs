@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from re import Pattern
 from typing import Any, ClassVar
 
 import yaml
@@ -63,12 +62,12 @@ class VictoriaLogsBackend(TextQueryBackend):
 
     # Field-name quoting — see docs/mapping.md §3.
     field_quote: ClassVar[str] = '"'
-    field_quote_pattern: ClassVar[Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+    field_quote_pattern: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
     field_quote_pattern_negation: ClassVar[bool] = True
 
     field_escape: ClassVar[str] = "\\"
     field_escape_quote: ClassVar[bool] = True
-    field_escape_pattern: ClassVar[Pattern[str]] = re.compile(r'["\\]')
+    field_escape_pattern: ClassVar[re.Pattern[str]] = re.compile(r'["\\]')
 
     # Value quoting / escape rules — see docs/mapping.md §4.
     # `wildcard_single` stays declared (not None) so pySigma routes `?`-bearing
