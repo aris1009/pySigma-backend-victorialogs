@@ -11,13 +11,13 @@ auto-injects ``_time:[-5m]`` from the group interval) must rewrite the
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Frozen baseline. Picked far enough in the past that the vmalert e2e
 # harness (which expects fresh ``_time``) cannot accidentally match
 # unrewritten synthetic data, and far enough in the future that anyone
 # searching VL for "real" data won't see it as production traffic.
-BASELINE = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
+BASELINE = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 
 
 def stamp(offset_seconds: int) -> str:
