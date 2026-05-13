@@ -32,7 +32,7 @@ You will need Python 3.10 or newer.
 ```bash
 make test-fast       # unit + fuzz, ~2 seconds
 make lint            # ruff check + ruff format --check + mypy strict
-make audit           # radon cc, vulture, interrogate
+make audit           # ruff complexity (C90), vulture
 make test            # full suite + 95% coverage gate
 ```
 
