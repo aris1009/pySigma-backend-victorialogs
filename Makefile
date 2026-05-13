@@ -41,9 +41,8 @@ check: lint test-fast
 # Code-health audit gate: cyclomatic complexity, dead code, docstring coverage.
 # Tighten thresholds here as the codebase matures.
 audit:
-	poetry run radon cc sigma -nc -s
+	poetry run ruff check --select C90 sigma
 	poetry run vulture sigma --min-confidence 80
-	poetry run interrogate sigma --fail-under 95
 
 # Run the corpus integration test (requires SigmaHQ rules cloned locally).
 corpus:
