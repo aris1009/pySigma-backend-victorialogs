@@ -1,0 +1,158 @@
+# Contract between SigmaHQ webserver rules and the synthetic Caddy v2
+# datasets. Same schema as e2e/expectations.yml — kept in a separate file
+# so the caddy harness loads only its own contract (the windows e2e
+# harness loads expectations.yml, the caddy harness loads this).
+#
+# Pipeline: rules are converted via victorialogs_caddy() and queried
+# against datasets emitted by dev/synth/caddy.py (attack mix) and
+# dev/synth/caddy.py::generate_benign (benign-only).
+#
+# Failure semantics — same as expectations.yml:
+#   - positive with hits < min_hits  -> hard fail
+#   - negative with hits > 0         -> hard fail (false-positive surface)
+
+version: 1
+
+expectations:
+  # ----------------------------- positives -----------------------------
+
+  - id: path_traversal_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_path_traversal_exploitation_attempt.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      The attack generator plants four traversal URIs spread across the
+      branch (`/../../../../etc/passwd`, `?file=../../../etc/passwd`,
+      `?p=../../../../windows/win.ini`, `?src=..%252f..%252f..%252fetc%252f`),
+      all of which match a literal substring in the rule's selection.
+
+  - id: source_code_enumeration_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_source_code_enumeration.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 20
+    notes: |
+      Source-disclosure branch plants `/.git/config` and `/.git/HEAD`. The
+      rule is a `keywords: ['.git/']` free-text search, so any event
+      containing `.git/` matches.
+
+  - id: jndi_exploit_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_jndi_exploit.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      JNDI branch plants `/Basic/Command/Base64/`, `/Basic/ReverseShell/`,
+      `/TomcatBypass/Command/`, `/Deserialization/URLDNS/` — each a
+      verbatim keyword from the rule.
+
+  - id: win_path_uri_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_susp_windows_path_uri.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      Windows-path branch plants `=C:/Users`, `=C:/Windows`,
+      `=C:/Program%20Files`, `=C%3A%5CUsers` — exact substrings the
+      rule's `cs-uri-query|contains` selection requires (mapped to
+      request.uri by victorialogs_caddy()).
+
+  - id: xss_in_access_logs_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_xss_in_access_logs.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      XSS branch plants `=<script>`, `=%3Cscript%3E`, `<svg `, and
+      `javascript:alert` URIs with method GET and status 200/500 (never
+      404, so the rule's `not status:=404` filter still leaves them in).
+
+  - id: sql_injection_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_sql_injection_in_access_logs.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      SQLi branch plants `UNION SELECT`, `UNION%20SELECT`, `or 1=1#`,
+      `select database()` URIs with method GET and non-404 status.
+
+  - id: ssti_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_ssti_in_access_logs.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      SSTI branch plants `={{`, `=%7B%7B`, `=${`, `=<%=` URIs with method
+      GET and non-404 status.
+
+  - id: win_webshells_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_win_webshells_in_access_logs.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      Win-webshell branch plants GET `?cmd=whoami`, `?cmd=cmd%20/c%20dir`,
+      `?cmd=powershell%20-c%20...`, `?cmd=tasklist%20/v`, `?cmd=ipconfig`.
+
+  - id: iis_shortname_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_iis_tilt_shortname_scan.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      IIS-shortname branch plants URIs containing `~1` and ending in
+      `a.aspx`, with method GET and status 200/301 — exactly the rule's
+      composite selection.
+
+  - id: f5_bash_api_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_f5_tm_utility_bash_api_request.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      F5 branch plants POST requests with URI ending in
+      `/mgmt/tm/util/bash` — matches the rule's
+      `cs-method: POST` + `cs-uri-query|endswith` exactly.
+
+  - id: susp_useragents_in_attack_mix
+    rule_path: rules/web/webserver_generic/web_susp_useragents.yml
+    dataset_path: synth/caddy_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      Recon-UA branch sets request.headers.User-Agent to a value drawn
+      from RECON_USER_AGENTS (Wfuzz/2, WPScan v3, Recon-ng/v5,
+      "GIS - AppSec Team - Project Vision") — verbatim substrings the
+      rule looks for.
+
+  # ----------------------------- negatives -----------------------------
+
+  - id: path_traversal_negative_against_benign
+    rule_path: rules/web/webserver_generic/web_path_traversal_exploitation_attempt.yml
+    dataset_path: synth/caddy_benign.ndjson
+    kind: negative
+    notes: |
+      Benign-only generator never emits traversal payloads. Any hit means
+      the benign branch leaked an attack URI.
+
+  - id: jndi_negative_against_benign
+    rule_path: rules/web/webserver_generic/web_jndi_exploit.yml
+    dataset_path: synth/caddy_benign.ndjson
+    kind: negative
+    notes: |
+      Benign-only generator never emits JNDI payloads.
+
+  - id: sql_injection_negative_against_benign
+    rule_path: rules/web/webserver_generic/web_sql_injection_in_access_logs.yml
+    dataset_path: synth/caddy_benign.ndjson
+    kind: negative
+    notes: |
+      Benign-only generator never emits SQLi payloads.
+
+  - id: susp_useragents_negative_against_benign
+    rule_path: rules/web/webserver_generic/web_susp_useragents.yml
+    dataset_path: synth/caddy_benign.ndjson
+    kind: negative
+    notes: |
+      Benign-only generator never picks from RECON_USER_AGENTS.

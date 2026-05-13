@@ -1,0 +1,143 @@
+# Contract between SigmaHQ kubernetes-audit rules and the synthetic
+# podman/k8s datasets. Same schema as e2e/expectations.yml — kept in a
+# separate file so the podman harness loads only its own contract.
+#
+# Pipeline: rules are converted via victorialogs_podman() and queried
+# against datasets emitted by dev/synth/podman.py (attack mix) and
+# dev/synth/podman.py::generate_benign (benign-only).
+#
+# The podman pipeline applies to product:kubernetes (and to legacy
+# category:container / product:docker rules); the public corpus that
+# exercises it is rules/application/kubernetes/audit/. Those rules use
+# top-level/nested audit-event fields (verb, objectRef.*, capabilities,
+# hostPath, responseStatus.code) that pass through the field mapping
+# unchanged — synthetic events emit them directly.
+#
+# Failure semantics — same as expectations.yml:
+#   - positive with hits < min_hits  -> hard fail
+#   - negative with hits > 0         -> hard fail (false-positive surface)
+
+version: 1
+
+expectations:
+  # ----------------------------- positives -----------------------------
+
+  - id: exec_into_pod_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_exec_into_container.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      exec_into_pod branch plants verb=create + objectRef.resource=pods
+      + objectRef.subresource=exec — exact selectors from the rule.
+
+  - id: privileged_pod_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_privileged_pod_creation.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      privileged_pod branch plants verb=create + objectRef.resource=pods
+      + capabilities (rule uses `capabilities:*` — exists check on the
+      field).
+
+  - id: system_namespace_pod_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_pod_in_system_namespace.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      system_namespace branch plants verb=create + objectRef.resource=pods
+      + objectRef.namespace=kube-system.
+
+  - id: secrets_enum_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_secrets_enumeration.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      secrets_enum branch plants verb=list + objectRef.resource=secrets.
+
+  - id: serviceaccount_create_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_serviceaccount_creation.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      serviceaccount branch plants verb=create + objectRef.resource=serviceaccounts.
+
+  - id: hostpath_mount_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_hostpath_mount.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      hostpath_mount branch plants verb=create + objectRef.resource=pods
+      + hostPath (rule uses `hostPath:*` exists check).
+
+  - id: sidecar_injection_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_sidecar_injection.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      sidecar_injection branch plants verb=patch + apiGroup=apps +
+      objectRef.resource=deployments.
+
+  - id: unauth_action_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_unauthorized_unauthenticated_actions.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      unauth_action branch plants responseStatus.code in {401, 403} —
+      the rule's only selector.
+
+  - id: admission_modify_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_change_admission_controller.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      admission_modify branch plants objectRef.apiGroup=admissionregistration.k8s.io
+      + objectRef.resource in mutating/validating-webhookconfigurations
+      + verb in create/update/patch/delete/replace.
+
+  - id: events_deleted_in_attack_mix
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_events_deleted.yml
+    dataset_path: synth/podman_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      events_deleted branch plants verb=delete + objectRef.resource=events.
+
+  # ----------------------------- negatives -----------------------------
+
+  - id: exec_into_pod_negative_against_benign
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_exec_into_container.yml
+    dataset_path: synth/podman_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits objectRef.subresource=exec.
+
+  - id: secrets_enum_negative_against_benign
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_secrets_enumeration.yml
+    dataset_path: synth/podman_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits objectRef.resource=secrets.
+
+  - id: privileged_pod_negative_against_benign
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_privileged_pod_creation.yml
+    dataset_path: synth/podman_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits a `capabilities` field — the rule's
+      `capabilities:*` exists check finds nothing.
+
+  - id: unauth_action_negative_against_benign
+    rule_path: rules/application/kubernetes/audit/kubernetes_audit_unauthorized_unauthenticated_actions.yml
+    dataset_path: synth/podman_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator returns responseStatus.code=200 only.

@@ -1,0 +1,30 @@
+.coverage*
+.vscode/
+**/__pycache__
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+htmlcov/
+cov.xml
+dist/
+docs/_build
+*.egg-info/
+.venv/
+venv/
+
+# Beads / Dolt files (local-only tracker — never sync to public repo)
+.beads/
+.dolt/
+*.db
+.beads-credential-key
+
+# Agent-tooling artefacts (local-only — never sync to public repo)
+AGENTS.md
+CLAUDE.md
+.claude/
+
+# E2E datasets — fetched on demand by `make e2e-fetch`; never committed.
+/e2e/datasets/*
+!/e2e/datasets/.gitkeep
+/e2e/.cache/

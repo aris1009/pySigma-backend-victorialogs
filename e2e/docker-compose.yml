@@ -1,0 +1,96 @@
+# Reproducible-anywhere VictoriaLogs stack for both the e2e suite and the
+# parse-only `make live` dev loop.
+#
+# - victorialogs runs unconditionally — used by `make live-up` (parse-only,
+#   no ingest) and by the e2e suite.
+# - vector is gated behind the "e2e" profile and only starts when the e2e
+#   harness is brought up with `--profile e2e` (see Makefile e2e-up).
+#   It reads JSON dumps from e2e/datasets/otrf/ (mordor shape) and forwards
+#   them to VL using the same winlog.* shape Winlogbeat / Vector ECS
+#   produce in the wild. Synthetic non-Windows datasets (e2e/datasets/synth/)
+#   are emitted directly in pipeline-target shape and POSTed to VL via
+#   /insert/jsonline by the test harness — Vector is bypassed for those.
+# - vmalert is gated behind the "vmalert" profile and starts when the
+#   vmalert e2e harness is brought up. It reads a rule-group YAML mounted
+#   at /rules/sigma.yaml (written by the test) and queries VL via the
+#   vlogs datasource type.
+#
+# Targets:
+#   make live-up      - bring up VL only (parse-only dev loop)
+#   make live         - run the curated live tests against VL
+#   make live-down    - tear down the live stack
+#   make e2e-up       - bring up VL+Vector and block until VL /health is OK
+#   make e2e-down     - tear the stack down and remove the data volume
+#   make e2e          - one-shot: e2e-up + e2e-test + e2e-down
+#   make vmalert-up   - bring up VL+vmalert (no Vector — synthetic only)
+#   make vmalert-down - tear down the vmalert stack
+#   make vmalert      - one-shot: vmalert-up + vmalert-test + vmalert-down
+
+services:
+  victorialogs:
+    # Pinned by tag + digest for reproducibility. Bump procedure: see CONTRIBUTING.md.
+    image: victoriametrics/victoria-logs:v1.50.0@sha256:ae9bea8d8a3b0fc47c7f0058bcca410e79c84b4a0acd12d4dac71b9302526590
+    container_name: pysigma-victorialogs-e2e-vl
+    command:
+      - "-storageDataPath=/victoria-logs-data"
+      - "-retentionPeriod=1d"
+      - "-search.maxQueryLen=524288"
+    ports:
+      - "127.0.0.1:9428:9428"
+    volumes:
+      - vl-data:/victoria-logs-data
+    restart: unless-stopped
+
+  # Vector reads ndjson from /datasets and posts to VL. The actual source
+  # + http sink configuration lives in vector.toml.
+  vector:
+    # Pinned by tag + digest for reproducibility. Bump procedure: see CONTRIBUTING.md.
+    image: timberio/vector:0.41.1-alpine@sha256:501e5403e19238c9073c116fb3cbb750a9201d0271b09dae88f044534803c670
+    container_name: pysigma-victorialogs-e2e-vector
+    profiles: ["e2e"]
+    depends_on:
+      - victorialogs
+    # The pinned image ships its own /etc/vector/vector.yaml (a demo syslog
+    # generator) that Vector loads by default. We must point Vector at our
+    # mounted vector.toml explicitly, otherwise the OTRF remap never runs.
+    command: ["--config", "/etc/vector/vector.toml"]
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml:ro
+      - ./datasets:/datasets:ro
+      - vector-data:/var/lib/vector
+    restart: unless-stopped
+
+  # vmalert evaluates a rule-group YAML against VL. The rule-group YAML
+  # is produced by the harness via `sigma convert -t victorialogs -f
+  # vmalert` and mounted at /rules/sigma.yaml. The HTTP API surface
+  # (alerts/groups/notifiers) is reachable on 127.0.0.1:8880 so the
+  # test can poll for fired alerts.
+  #
+  # Tag and digest must agree. Bump procedure: see CONTRIBUTING.md.
+  vmalert:
+    image: victoriametrics/vmalert:v1.142.0@sha256:1024bc3eb70ff958bf802290858c090abf84cfe5813fb345e2d92d5232e27e6a
+    container_name: pysigma-victorialogs-e2e-vmalert
+    profiles: ["vmalert"]
+    depends_on:
+      - victorialogs
+    command:
+      - "-datasource.url=http://victorialogs:9428"
+      - "-rule=/rules/sigma.yaml"
+      - "-evaluationInterval=5s"
+      - "-httpListenAddr=:8880"
+      - "-loggerLevel=INFO"
+      # The harness only inspects /api/v1/alerts — no Alertmanager
+      # downstream — but vmalert refuses to start without some notifier
+      # configured. Blackhole is the documented "no-op" sink.
+      - "-notifier.blackhole"
+    ports:
+      - "127.0.0.1:8880:8880"
+    volumes:
+      # Bind-mounted from a host directory the test fills in. Compose
+      # creates the directory on `up` if absent.
+      - ./vmalert-rules:/rules:ro
+    restart: unless-stopped
+
+volumes:
+  vl-data:
+  vector-data:

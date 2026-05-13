@@ -1,0 +1,63 @@
+name: Bug report
+description: Report incorrect or unexpected LogsQL output from the backend.
+title: "bug: <short summary>"
+labels: ["bug"]
+body:
+  - type: textarea
+    id: rule
+    attributes:
+      label: Sigma rule (YAML)
+      description: Minimal rule that reproduces the issue.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected LogsQL
+      description: What the backend should emit.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual LogsQL
+      description: What the backend actually emits (full converter output).
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: vl-version
+    attributes:
+      label: VictoriaLogs version
+      placeholder: "v1.x.x"
+    validations:
+      required: false
+
+  - type: input
+    id: pysigma-version
+    attributes:
+      label: pySigma version
+      placeholder: "1.1.x"
+    validations:
+      required: true
+
+  - type: input
+    id: backend-version
+    attributes:
+      label: pySigma-backend-victorialogs version
+      placeholder: "0.1.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: VL HTTP error (if any), traceback, related rules, etc.
+    validations:
+      required: false

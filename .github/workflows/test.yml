@@ -1,0 +1,94 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a  # v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Lint (ruff)
+        run: |
+          poetry run ruff check sigma tests dev
+          poetry run ruff format --check sigma tests dev
+
+      - name: Type check (mypy)
+        run: poetry run mypy
+
+      - name: Code-health audit
+        run: make audit
+
+      - name: Start VictoriaLogs
+        # Pinned by tag + digest for reproducibility. Bump procedure: see CONTRIBUTING.md.
+        run: |
+          docker run -d --name vl \
+            -p 9428:9428 \
+            victoriametrics/victoria-logs:v1.50.0@sha256:ae9bea8d8a3b0fc47c7f0058bcca410e79c84b4a0acd12d4dac71b9302526590 \
+            -search.maxQueryLen=524288
+          for i in {1..30}; do
+            curl -sf http://localhost:9428/health && break
+            sleep 1
+          done
+          curl -sf http://localhost:9428/health
+
+      - name: Clone SigmaHQ corpus
+        run: git clone --depth=1 https://github.com/SigmaHQ/sigma /tmp/sigma-rules
+
+      - name: Run full test suite (unit + corpus + live VL)
+        env:
+          SIGMA_CORPUS_PATH: /tmp/sigma-rules
+          VICTORIALOGS_URL: http://localhost:9428
+        run: poetry run pytest tests/ --cov-fail-under=95 --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Stop VictoriaLogs
+        if: always()
+        run: docker rm -f vl || true

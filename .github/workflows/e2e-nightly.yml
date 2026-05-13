@@ -1,0 +1,148 @@
+name: E2E (nightly heavy — OTRF + synthetic + vmalert)
+
+# Heavy harness — brings up VictoriaLogs + Vector via docker compose,
+# downloads ~1MB of OTRF datasets (cached after first hit), runs the
+# full Sigma-rule-by-dataset assertions in tests/e2e/ (Windows
+# EventLog + caddy/journald/podman/suricata + vmalert). The
+# per-PR fast lane (e2e-fast.yml) covers the synthetic subset in <2
+# min on every PR — this nightly catches anything that depends on the
+# OTRF + Vector + vmalert path the fast lane skips.
+#
+# Triggers:
+#   - schedule: nightly at 03:00 UTC on master so silent overnight
+#     regressions surface within a day.
+#   - workflow_dispatch: manual run from the Actions tab.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: Windows EventLog e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Needed only for the "open tracking issue on nightly failure" step.
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a  # v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: .venv
+          key: venv-e2e-${{ runner.os }}-py3.12-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Cache OTRF datasets
+        id: dataset-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            e2e/datasets
+            e2e/.cache
+          key: e2e-datasets-${{ hashFiles('e2e/datasets.yml') }}
+
+      - name: Fetch datasets (cache miss only)
+        if: steps.dataset-cache.outputs.cache-hit != 'true'
+        run: make e2e-fetch
+
+      - name: Clone SigmaHQ corpus
+        # Pinned-commit clone; the e2e harness reads upstream Sigma rules from
+        # SIGMA_CORPUS_PATH so we test the exact rule a real user would deploy.
+        run: git clone --depth=1 https://github.com/SigmaHQ/sigma /tmp/sigma-rules
+
+      - name: Bring up VL + Vector
+        run: make e2e-up
+
+      - name: Run Windows EventLog harness
+        env:
+          SIGMA_CORPUS_PATH: /tmp/sigma-rules
+          VL_E2E_URL: http://localhost:9428
+          E2E_DATASETS_DIR: ${{ github.workspace }}/e2e/datasets
+        run: make e2e-test
+
+      - name: Tear down e2e stack
+        # The vmalert harness uses a separate compose profile and shares
+        # the vl-data volume — drop it cleanly before the second run so
+        # earlier ingest does not contaminate vmalert's _time:[-30s] window.
+        run: make e2e-down
+
+      - name: Bring up VL + vmalert
+        run: make vmalert-up
+
+      - name: Run vmalert harness
+        env:
+          VL_E2E_URL: http://localhost:9428
+          VMALERT_URL: http://localhost:8880
+        run: make vmalert-test
+
+      - name: Capture compose logs (on failure)
+        # Capture to a file so the next step can upload it as a downloadable
+        # artifact, and tee into the run log for quick triage.
+        if: failure()
+        run: |
+          mkdir -p compose-logs
+          docker compose -f e2e/docker-compose.yml logs --no-color > compose-logs/docker-compose.log 2>&1 || true
+          echo "::group::docker compose logs"
+          cat compose-logs/docker-compose.log || true
+          echo "::endgroup::"
+
+      - name: Upload compose logs artifact
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: compose-logs-${{ github.run_id }}
+          path: compose-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear down stack
+        if: always()
+        # `down` is global — drops any service from any profile that's
+        # still running, plus the data volumes (-v).
+        run: make vmalert-down
+
+      - name: Open tracking issue (nightly failures only)
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          today="$(date -u +%Y-%m-%d)"
+          # Reuse a single rolling tracking issue to avoid spam — append a
+          # comment when the issue already exists.
+          existing="$(gh issue list --label e2e-nightly --state open --json number --jq '.[0].number' || true)"
+          if [ -n "${existing:-}" ]; then
+            gh issue comment "$existing" --body "Nightly e2e failed on ${today}: ${run_url}"
+          else
+            gh issue create \
+              --title "[e2e nightly] tracking issue — failures land here" \
+              --label e2e-nightly \
+              --body "Auto-opened by .github/workflows/e2e.yml. First failure: ${today} — ${run_url}"
+          fi

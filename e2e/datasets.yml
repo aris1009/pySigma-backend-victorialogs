@@ -1,0 +1,415 @@
+# Manifest of datasets used by the e2e harness.
+#
+# Each entry pins a specific upstream artefact (or synthetic generator
+# inputs) by sha256 so that fetches are reproducible and the harness
+# fails closed on tamper / non-determinism. The fetcher
+# (dev/fetch_datasets.py, invoked by `make e2e-fetch`) materialises
+# every entry into e2e/datasets/<target>.
+#
+# Source kinds:
+#   - source: otrf | evtx-samples
+#       Download an archive from a pinned URL, sha256-verify the bytes,
+#       extract the JSON member into <target>. Required fields:
+#       url, archive (raw|zip|gzip), sha256, target. Optional: member.
+#   - source: synthetic
+#       Run dev.synth.<generator>(seed, count) and serialise its output
+#       deterministically. The sha256 covers the *output bytes*. Required
+#       fields: generator, seed, count, sha256, target. Must NOT declare
+#       url/archive/member.
+#
+# Adding a new dataset:
+#   1. Add the entry below (leave sha256 empty).
+#   2. Run `python dev/fetch_datasets.py --pin` to compute and
+#      write back the sha256.
+#   3. Commit the updated manifest.
+#
+# Updating an upstream pin (commit hash in the URL) or a synthetic
+# generator's content:
+#   1. Bump the URL / generator code.
+#   2. Clear the sha256 field for that entry.
+#   3. Run `--pin` again, commit.
+#
+# Note on shape: OTRF Security-Datasets ships in mordor JSON shape (top-level
+# Channel, EventID, etc. — NOT winlog.* prefixed). The Vector pipeline
+# is responsible for remapping these into the
+# winlog.{channel,event_id,event_data.*} layout the
+# victorialogs_windows_eventlog() pipeline targets. Synthetic non-Windows
+# datasets are emitted directly in the pipeline-target shape — no Vector
+# transform needed; ingest via /insert/jsonline directly.
+
+version: 1
+
+datasets:
+  - name: otrf_psh_powershell_httplistener
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/execution/host/psh_powershell_httplistener.zip
+    sha256: 506ba862fd76e0f8d43396e705ec6eebb7a01a5a2954bd70c9f47802d32f4843
+    archive: zip
+    target: otrf/psh_powershell_httplistener.json
+    description: |
+      PowerShell HTTPListener execution sample. Exercises PowerShell channel
+      (Microsoft-Windows-PowerShell/Operational, EID 4104 ScriptBlock) and
+      Sysmon channel (Microsoft-Windows-Sysmon/Operational).
+
+  - name: otrf_cmd_sharpview_pcre_net
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/execution/host/cmd_sharpview_pcre_net.zip
+    sha256: 314b1d08b9038dd327c8769c82564a44fd26fa1ba17ffa79e52b4683e2821dac
+    archive: zip
+    target: otrf/cmd_sharpview_pcre_net.json
+    description: |
+      SharpView discovery tool execution. Sysmon EID 1 (process_creation) of
+      .NET assembly with PCRE.NET dependency — useful for offensive-tool rules.
+
+  - name: otrf_empire_mimikatz_logonpasswords
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/credential_access/host/empire_mimikatz_logonpasswords.zip
+    sha256: bb4c057b62d781be5426e011872ba1a15070c07afbb24848a14458f4b22b06fb
+    archive: zip
+    target: otrf/empire_mimikatz_logonpasswords.json
+    description: |
+      Empire framework running mimikatz `sekurlsa::logonpasswords` against
+      LSASS. Heavy Sysmon traffic plus Security 4624/4663; the canonical
+      credential-dumping correctness probe.
+
+  - name: otrf_cmd_service_mod_fax
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/privilege_escalation/host/cmd_service_mod_fax.zip
+    sha256: 4a40cb09c514f1a4c601588cbfa5c81e12a6f8a5ab92fd76bad846c1a4352447
+    archive: zip
+    target: otrf/cmd_service_mod_fax.json
+    description: |
+      Privilege escalation via modifying the Fax service binPath. Security
+      4697 (service installed) + System channel.
+
+  - name: otrf_empire_psremoting_stager
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/lateral_movement/host/empire_psremoting_stager.zip
+    sha256: 214355730c8cf903f4423c96aa7459fed7b74258e2a6766b794ba316e9d3a46e
+    archive: zip
+    target: otrf/empire_psremoting_stager.json
+    description: |
+      Empire PSRemoting stager — lateral movement via WS-Management. Security
+      4624 type 3 logons + WinRM channel.
+
+  # ----------------------------------------------------------------------
+  # OTRF breadth expansion — covers MITRE techniques
+  # not reached by the original 5 OTRF entries: defense_evasion,
+  # persistence, discovery, plus additional credential_access/lateral_movement.
+  # Same upstream commit-pin as the entries above for reproducibility.
+  # ----------------------------------------------------------------------
+
+  - name: otrf_cmd_bitsadmin_download_psh_script
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/defense_evasion/host/cmd_bitsadmin_download_psh_script.zip
+    sha256: 8fb7bc9f3d82f672dc39a55e50006137aa540c4a9860acdcc5d08a4fd609b594
+    archive: zip
+    target: otrf/cmd_bitsadmin_download_psh_script.json
+    description: |
+      Bitsadmin file download (T1197) — Sysmon EID 1 captures
+      `bitsadmin.exe /transfer /Download <https-url> <local-path>`.
+      Exercises the LOLBAS download path and the bitsadmin Sigma rule.
+
+  - name: otrf_cmd_mshta_javascript_getobject_sct
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/defense_evasion/host/cmd_mshta_javascript_getobject_sct.zip
+    sha256: 976a705690dcc296ba132b9cd594c004265911e9e40d402c879dd06eddbbc057
+    archive: zip
+    target: otrf/cmd_mshta_javascript_getobject_sct.json
+    description: |
+      mshta.exe javascript:GetObject(<remote .sct>) execution
+      (T1218.005) — proxy-execution defense-evasion path through
+      mshta.
+
+  - name: otrf_cmd_netsh_fw_mod_open_ports
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/defense_evasion/host/cmd_netsh_fw_mod_open_ports.zip
+    sha256: 3d887b38c6a92892f950029f40114fe4598a798ad20453671dbe3d111b9ce4a2
+    archive: zip
+    target: otrf/cmd_netsh_fw_mod_open_ports.json
+    description: |
+      `netsh advfirewall firewall add rule …` to open an inbound TCP
+      port (T1562.004 / T1686.003) — exercises the firewall-modification
+      defense-evasion rules.
+
+  - name: otrf_empire_launcher_sct_regsvr32
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/defense_evasion/host/empire_launcher_sct_regsvr32.zip
+    sha256: abeb5c52c75286386e5eb999d7423d738a624191f4a95fb62694b471a10b2dab
+    archive: zip
+    target: otrf/empire_launcher_sct_regsvr32.json
+    description: |
+      Empire regsvr32 squiblydoo launcher
+      (`regsvr32 /s /n /u /i:http://… scrobj.dll`, T1218.010) — distinct
+      from the existing PSRemoting / mimikatz Empire datasets, exercises
+      the regsvr32-network-pattern detection path.
+
+  - name: otrf_psh_cmstp_execution_bypassuac
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/defense_evasion/host/psh_cmstp_execution_bypassuac.zip
+    sha256: a653c698e8f779261ba0b3ac92bd604d4abe3a510cda8ab1f5ccdd421d013d4c
+    archive: zip
+    target: otrf/psh_cmstp_execution_bypassuac.json
+    description: |
+      cmstp.exe UAC-bypass via crafted .INF (T1548.002 / T1218.003) —
+      `cmstp.exe /s <inf> /au` with elevated dllhost spawn.
+
+  - name: otrf_cmd_userinitmprlogonscript_batch
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/persistence/host/cmd_userinitmprlogonscript_batch.zip
+    sha256: 53a01d6976b7567a2464628d850c51cc48b1a91a932cd2b0e110a510bcedf858
+    archive: zip
+    target: otrf/cmd_userinitmprlogonscript_batch.json
+    description: |
+      Logon-script persistence via the
+      HKCU\Environment\UserInitMprLogonScript value (T1037.001), set
+      by `reg add` to a per-user batch file. Sysmon EID 13 captures
+      the registry write — the discriminating field is the value name
+      "UserInitMprLogonScript", a unique-per-technique token. (The
+      empire_persistence_registry_modification_run_keys_* atomic was
+      considered first but its TargetObject is HKLM\SOFTWARE\... while
+      the SigmaHQ Run-key rules use \Software\... ; phrase filters in
+      VictoriaLogs are case-sensitive, so those rules do not fire on
+      the OS-canonical uppercase path the dataset records. UserInit's
+      single-token TargetObject sidesteps that mismatch.)
+
+  - name: otrf_empire_schtasks_creation_execution_elevated_user
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/persistence/host/empire_schtasks_creation_execution_elevated_user.zip
+    sha256: 74662dc5c52f4ac2fc9dcb336bae7fb4e101217169c65adf5784b03015501d3b
+    archive: zip
+    target: otrf/empire_schtasks_creation_execution_elevated_user.json
+    description: |
+      Empire scheduled-task persistence (T1053.005) —
+      `schtasks /Create /F /RU system /SC ONLOGON /TN MordorElevated /TR
+      "powershell …FromBase64String…"` and the launched powershell child.
+      Larger dataset (~59k events) covering the full launch chain.
+
+  - name: otrf_empire_wmi_local_event_subscriptions_elevated_user
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/persistence/host/empire_wmi_local_event_subscriptions_elevated_user.zip
+    sha256: a507f2edd768b592e6b3157e974fd0468965eee00407387d88356ecb8fd20fea
+    archive: zip
+    target: otrf/empire_wmi_local_event_subscriptions_elevated_user.json
+    description: |
+      Empire WMI event-subscription persistence (T1546.003) — Sysmon
+      EID 19/20/21 capture WmiEventFilter / WmiEventConsumer /
+      WmiEventConsumerToFilter creation. Exercises the wmi_event
+      logsource path.
+
+  - name: otrf_cmd_seatbelt_group_user
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/discovery/host/cmd_seatbelt_group_user.zip
+    sha256: d885d5c331641d24594869c62eaae563d1ff0c18a2d3c2ba71f48b10e663b1bc
+    archive: zip
+    target: otrf/cmd_seatbelt_group_user.json
+    description: |
+      GhostPack Seatbelt host-recon tool (`Seatbelt.exe -group=user`,
+      T1087/T1083/T1526) — exercises the PUA-Seatbelt rule on the
+      discovery technique branch.
+
+  - name: otrf_cmd_sam_copy_esentutl
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/credential_access/host/cmd_sam_copy_esentutl.zip
+    sha256: f7a71135778aeff605abcb88a14a076f0814ab5cb136d07103bdf13c45551b64
+    archive: zip
+    target: otrf/cmd_sam_copy_esentutl.json
+    description: |
+      SAM hive copy via `esentutl.exe /y /vss <path>\config\SAM /d <out>`
+      (T1003.002) — exercises the LOLBAS esentutl path. Distinct from
+      the ntdsutil dataset (T1003.003) on the same MITRE tactic.
+      (The empire_shell_net_localgroup_administrators atomic was
+      considered first for discovery breadth but the SigmaHQ
+      net-localgroup rules gate on lowercase ' administrator' substrings,
+      which do not match the dataset's capital "Administrators" under
+      VictoriaLogs's case-sensitive phrase filter.)
+
+  - name: otrf_cmd_dumping_ntds_dit_file_ntdsutil
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/credential_access/host/cmd_dumping_ntds_dit_file_ntdsutil.zip
+    sha256: 4633882ab1e9eadd156b29a89a5a6e24b680ead1b11ee259fdbe0d19ddbf77cf
+    archive: zip
+    target: otrf/cmd_dumping_ntds_dit_file_ntdsutil.json
+    description: |
+      ntdsutil.exe NTDS.dit dump via IFM (T1003.003) —
+      `ntdsutil "ac i ntds" "ifm" "create full <path>"`. Heavy LSASS
+      handle traffic plus Volume Shadow Copy invocation.
+
+  - name: otrf_empire_psexec_dcerpc_tcp_svcctl
+    source: otrf
+    url: https://raw.githubusercontent.com/OTRF/Security-Datasets/d9d40ef123d2c87d5d3df28c96bcab4f0faccc87/datasets/atomic/windows/lateral_movement/host/empire_psexec_dcerpc_tcp_svcctl.zip
+    sha256: 8f40e7fc86bbbf31ebd50b3ba537cf0f4378392ae3e74de84bee00aeb0de1fa5
+    archive: zip
+    target: otrf/empire_psexec_dcerpc_tcp_svcctl.json
+    description: |
+      Empire psexec module (T1021.002 / T1569.002) — registers a
+      service named "Updater" whose ImagePath is an encoded
+      powershell.exe payload. Captured as System EID 7045 plus the
+      Sysmon EID 1 launch chain.
+
+  # ----------------------------------------------------------------------
+  # Synthetic seeds — minimal smoke datasets for the framework. The
+  # per-pipeline expectations files (expectations_<pipeline>.yml) own the
+  # rule-by-dataset assertions; these entries exist so `make e2e-fetch`
+  # exercises the synthetic dispatch on a clean tree and so the vmalert
+  # harness has fresh-able data to drive against.
+  # ----------------------------------------------------------------------
+
+  - name: synth_caddy_seed_smoke
+    source: synthetic
+    generator: caddy
+    seed: 42
+    count: 200
+    sha256: e4f1013b43a45f95d3245bd8a5a1bbef3e83bdfab9986ad3a77482158dde05a3
+    target: synth/caddy_seed_smoke.ndjson
+    description: |
+      200-event Caddy v2 access-log smoke dataset. Mix of benign GETs and
+      attack-shaped requests planting verbatim SigmaHQ webserver-rule
+      payloads (path traversal, source disclosure, JNDI, win-path,
+      XSS/SQLi/SSTI, win webshell, IIS shortname scan, F5 bash, recon UAs).
+
+  - name: synth_caddy_attack
+    source: synthetic
+    generator: caddy
+    seed: 42
+    count: 5000
+    sha256: f6b881aafbaf8568006044d2a164f6d4f5edce4303a9381bd3e2d0e5fb32730e
+    target: synth/caddy_attack.ndjson
+    description: |
+      5000-event Caddy v2 attack-mix dataset for the caddy e2e harness.
+      ~40% of events are attack-shaped; positive expectations in
+      e2e/expectations_caddy.yml assert public SigmaHQ webserver rules
+      fire against this NDJSON.
+
+  - name: synth_caddy_benign
+    source: synthetic
+    generator: caddy_benign
+    seed: 43
+    count: 1000
+    sha256: d13b216cf1c20bda21fa683fa44d7a542d9b500a1d38aa19f537a548d7674828
+    target: synth/caddy_benign.ndjson
+    description: |
+      1000-event benign-only Caddy v2 dataset. Negative expectations:
+      webserver rules that fire on synth_caddy_attack MUST NOT fire here.
+
+  - name: synth_journald_seed_smoke
+    source: synthetic
+    generator: journald
+    seed: 42
+    count: 200
+    sha256: b68315cefeb2deb9e1a303d7290389c5e8eaceb586fcd07b5fcba8c08741f6bc
+    target: synth/journald_seed_smoke.ndjson
+    description: |
+      200-event journald smoke dataset. Mix of routine sshd/cron/systemd
+      entries and attack-shaped MESSAGE lines planting verbatim SigmaHQ
+      Linux `keywords:` payloads (rev shells, sshd errors, named errors,
+      crontab REPLACE, kernel promiscuous mode, syslog clear, stack
+      smashing, history tamper).
+
+  - name: synth_journald_attack
+    source: synthetic
+    generator: journald
+    seed: 42
+    count: 5000
+    sha256: 9b003ec95f552dcfe7952c451212b78f2d585197e2ae2a990d9e815f23c15298
+    target: synth/journald_attack.ndjson
+    description: |
+      5000-event journald attack-mix dataset for the journald e2e harness
+     . ~40% of events plant verbatim SigmaHQ Linux
+      keyword-rule strings into MESSAGE; positive expectations in
+      e2e/expectations_journald.yml assert public Sigma rules fire
+      against this NDJSON.
+
+  - name: synth_journald_benign
+    source: synthetic
+    generator: journald_benign
+    seed: 43
+    count: 1000
+    sha256: a9314810a283dfa1d3dfa6a3a36e93f725697d3ae9f6a0e009934c317dd1d341
+    target: synth/journald_benign.ndjson
+    description: |
+      1000-event benign-only journald dataset. Negative expectations:
+      Linux keyword rules that fire on synth_journald_attack MUST NOT
+      fire here.
+
+  - name: synth_podman_seed_smoke
+    source: synthetic
+    generator: podman
+    seed: 42
+    count: 200
+    sha256: 5f160731c940e45e750f92407600baab72356b265e9be0412269effaf4b68dfc
+    target: synth/podman_seed_smoke.ndjson
+    description: |
+      200-event Kubernetes audit-event smoke dataset. Routine pod/secret
+      reads plus attack-shaped events (privileged pod create, exec into
+      pod, kube-system namespace, secrets enumeration, hostPath mount,
+      admission-controller modification) targeting public k8s-audit
+      Sigma rules — the only public corpus that exercises the
+      `victorialogs_podman` pipeline.
+
+  - name: synth_podman_attack
+    source: synthetic
+    generator: podman
+    seed: 42
+    count: 5000
+    sha256: df2d5c86d6fdfe51849a6acce0d8f2a6b9c653d6233aa3b6c9de6dd9f6931ad2
+    target: synth/podman_attack.ndjson
+    description: |
+      5000-event Kubernetes audit attack-mix dataset for the podman e2e
+      harness. ~40% of events plant verbatim
+      selectors for SigmaHQ rules under
+      rules/application/kubernetes/audit/; positive expectations in
+      e2e/expectations_podman.yml assert those rules fire against this
+      NDJSON.
+
+  - name: synth_podman_benign
+    source: synthetic
+    generator: podman_benign
+    seed: 43
+    count: 1000
+    sha256: d3efefedf426ff215a5c84667e0d488a331efc656b302585b01bc786f94da3c0
+    target: synth/podman_benign.ndjson
+    description: |
+      1000-event benign-only Kubernetes audit dataset. Negative
+      expectations: k8s-audit rules that fire on synth_podman_attack
+      MUST NOT fire here.
+
+  - name: synth_suricata_seed_smoke
+    source: synthetic
+    generator: suricata
+    seed: 42
+    count: 200
+    sha256: 251821ae6f14bdd2a219a7ef8b9e6a9b55d04748df650826249d938322fcb6be
+    target: synth/suricata_seed_smoke.ndjson
+    description: |
+      200-event Suricata EVE smoke dataset. Mix of flow/http/dns/tls/alert
+      events plus attack-shaped DNS/HTTP records planting verbatim
+      payloads SigmaHQ network/dns/proxy rules look for.
+
+  - name: synth_suricata_attack
+    source: synthetic
+    generator: suricata
+    seed: 42
+    count: 5000
+    sha256: 526b9fd429c41b17ac379a0e30317b2a35db8ad06348e20e0c9f59b6b6d9e7e1
+    target: synth/suricata_attack.ndjson
+    description: |
+      5000-event Suricata EVE attack-mix dataset for the suricata e2e
+      harness. ~40% of events plant verbatim
+      payloads for SigmaHQ DNS rules (Telegram bot API, B64 exfil
+      labels, Cobalt Strike, XMR mining pools, WannaCry killswitches,
+      OAST domains) and proxy rules (PwnDrop, Baby Shark URLs);
+      positive expectations in e2e/expectations_suricata.yml assert
+      those rules fire against this NDJSON.
+
+  - name: synth_suricata_benign
+    source: synthetic
+    generator: suricata_benign
+    seed: 43
+    count: 1000
+    sha256: 2961a262b42da2f20784a70c4eb2a502a621c775e1929068c98b5d74a6d2a7ca
+    target: synth/suricata_benign.ndjson
+    description: |
+      1000-event benign-only Suricata EVE dataset. Negative
+      expectations: network/dns/proxy rules that fire on
+      synth_suricata_attack MUST NOT fire here.

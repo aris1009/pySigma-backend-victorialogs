@@ -1,0 +1,36 @@
+name: Feature request
+description: Request support for a Sigma feature or LogsQL shape.
+title: "feat: <short summary>"
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: sigma-feature
+    attributes:
+      label: Sigma feature
+      description: Which Sigma construct (modifier, condition shape, correlation, …) is missing or misbehaving?
+    validations:
+      required: true
+
+  - type: textarea
+    id: target-logsql
+    attributes:
+      label: Target LogsQL shape
+      description: What LogsQL should the backend emit? Paste the ideal output.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Why this matters — example rule(s) from SigmaHQ corpus, ecosystem parity, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+    validations:
+      required: false

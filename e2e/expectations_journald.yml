@@ -1,0 +1,133 @@
+# Contract between SigmaHQ Linux/journald rules and the synthetic
+# journald datasets. Same schema as e2e/expectations.yml — kept in a
+# separate file so the journald harness loads only its own contract.
+#
+# Pipeline: rules are converted via victorialogs_journald() and queried
+# against datasets emitted by dev/synth/journald.py (attack mix) and
+# dev/synth/journald.py::generate_benign (benign-only).
+#
+# All targeted rules are unbound `keywords:` filters that LogsQL
+# resolves against `_msg`. The harness copies `MESSAGE` onto `_msg` at
+# ingest so those keyword filters match the synthetic free-form log
+# line. See tests/e2e/test_journald_e2e.py.
+#
+# Failure semantics — same as expectations.yml:
+#   - positive with hits < min_hits  -> hard fail
+#   - negative with hits > 0         -> hard fail (false-positive surface)
+
+version: 1
+
+expectations:
+  # ----------------------------- positives -----------------------------
+
+  - id: rev_shell_in_attack_mix
+    rule_path: rules/linux/builtin/lnx_shell_susp_rev_shells.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      rev_shell branch plants MESSAGE strings containing the rule's
+      verbatim keywords ('bash -i >& /dev/tcp/', '/bin/bash -c exec
+      5<>/dev/tcp/', 'nc -e /bin/sh ').
+
+  - id: dev_tcp_in_attack_mix
+    rule_path: rules/linux/builtin/lnx_susp_dev_tcp.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 50
+    notes: |
+      Same rev_shell branch — its 'bash -i >& /dev/tcp/', 'cat </dev/tcp/'
+      and 'exec 5<>/dev/tcp/' templates are also verbatim keywords for
+      the /dev/tcp rule.
+
+  - id: sshd_susp_error_in_attack_mix
+    rule_path: rules/linux/builtin/sshd/lnx_sshd_susp_ssh.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      sshd_error branch plants 'fatal: buffer_get_string: bad string',
+      'Corrupted MAC on input', 'error in libcrypto', 'unexpected
+      internal error' — all keywords from the rule.
+
+  - id: named_susp_error_in_attack_mix
+    rule_path: rules/linux/builtin/syslog/lnx_syslog_susp_named.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      named_error branch plants ' dropping source port zero packet from ',
+      ' denied AXFR from ', and ' exiting (due to fatal error)' — all
+      keywords from the named rule.
+
+  - id: crontab_modification_in_attack_mix
+    rule_path: rules/linux/builtin/cron/lnx_cron_crontab_file_modification.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      crontab_replace branch plants '(<user>) REPLACE (<user>)' lines —
+      'REPLACE' is the rule's only keyword.
+
+  - id: susp_log_entries_in_attack_mix
+    rule_path: rules/linux/builtin/lnx_shell_susp_log_entries.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      susp_log branch plants 'entered promiscuous mode', 'Deactivating
+      service', 'Oversized packet received from', 'imuxsock begins to
+      drop messages' — all keywords from the rule.
+
+  - id: clear_syslog_in_attack_mix
+    rule_path: rules/linux/builtin/lnx_clear_syslog.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      clear_syslog branch plants 'rm -f /var/log/syslog', 'mv
+      /var/log/syslog', and ' > /var/log/syslog' substrings — verbatim
+      selectors from the rule.
+
+  - id: buffer_overflow_in_attack_mix
+    rule_path: rules/linux/builtin/lnx_buffer_overflows.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      buffer_overflow branch plants 'stack smashing detected' and
+      'attempt to execute code on stack by' — both keywords in the rule.
+
+  - id: history_tamper_in_attack_mix
+    rule_path: rules/linux/builtin/lnx_shell_clear_cmd_history.yml
+    dataset_path: synth/journald_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      history_tamper branch plants 'history -c', 'rm *sh_history',
+      'ln -sf /dev/null *sh_history', 'chattr +i*sh_history' templates —
+      all matching the rule's wildcarded keywords.
+
+  # ----------------------------- negatives -----------------------------
+
+  - id: rev_shell_negative_against_benign
+    rule_path: rules/linux/builtin/lnx_shell_susp_rev_shells.yml
+    dataset_path: synth/journald_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits /dev/tcp or nc -e payloads.
+
+  - id: clear_syslog_negative_against_benign
+    rule_path: rules/linux/builtin/lnx_clear_syslog.yml
+    dataset_path: synth/journald_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits 'rm /var/log/syslog' or '>
+      /var/log/syslog' shapes.
+
+  - id: history_tamper_negative_against_benign
+    rule_path: rules/linux/builtin/lnx_shell_clear_cmd_history.yml
+    dataset_path: synth/journald_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits bash_history-tamper payloads.

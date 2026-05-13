@@ -1,0 +1,10 @@
+# Code owners for pySigma-backend-victorialogs.
+# Every PR is reviewed by the listed owner(s) before merge.
+
+* @aris1009
+
+# Synthetic-data trust root. The leak guarantee is "review the vocab
+# module once, trust the generator math" — so any change under
+# dev/synth/ (especially _vocab.py) needs explicit owner review and is
+# not a routine refactor target.
+/dev/synth/ @aris1009

@@ -1,0 +1,122 @@
+# Contract between SigmaHQ network/dns/proxy rules and the synthetic
+# Suricata EVE datasets. Same schema as e2e/expectations.yml — kept in
+# a separate file so the suricata harness loads only its own contract.
+#
+# Pipeline: rules are converted via victorialogs_suricata() and queried
+# against datasets emitted by dev/synth/suricata.py (attack mix) and
+# dev/synth/suricata.py::generate_benign (benign-only). The pipeline
+# maps `query` -> `dns.rrname`, `c-uri` -> `http.url`, `dst_ip` ->
+# `dest_ip`, etc. — synthetic events emit the EVE-side names directly.
+#
+# Failure semantics — same as expectations.yml:
+#   - positive with hits < min_hits  -> hard fail
+#   - negative with hits > 0         -> hard fail (false-positive surface)
+
+version: 1
+
+expectations:
+  # ----------------------------- positives -----------------------------
+
+  - id: dns_telegram_in_attack_mix
+    rule_path: rules/network/dns/net_dns_susp_telegram_api.yml
+    dataset_path: synth/suricata_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      dns_telegram branch plants dns.rrname=api.telegram.org — exact
+      match for the rule's only selector.
+
+  - id: dns_b64_exfil_in_attack_mix
+    rule_path: rules/network/dns/net_dns_susp_b64_queries.yml
+    dataset_path: synth/suricata_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      dns_b64_exfil branch plants dns.rrname containing `==.` — exact
+      substring from the rule's `query|contains` selector.
+
+  - id: dns_cobalt_strike_in_attack_mix
+    rule_path: rules/network/dns/net_dns_mal_cobaltstrike.yml
+    dataset_path: synth/suricata_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      dns_cobalt branch plants dns.rrname starting with `aaa.stage.` /
+      `post.1` and containing `.stage.123456.` — verbatim selectors.
+
+  - id: dns_xmr_mining_in_attack_mix
+    rule_path: rules/network/dns/net_dns_pua_cryptocoin_mining_xmr.yml
+    dataset_path: synth/suricata_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      dns_xmr_mining branch plants dns.rrname containing one of
+      pool.minexmr.com / fr.minexmr.com / xmr-eu1.nanopool.org /
+      xmr.2miners.com — verbatim selectors.
+
+  - id: dns_wannacry_killswitch_in_attack_mix
+    rule_path: rules/network/dns/net_dns_wannacry_killswitch_domain.yml
+    dataset_path: synth/suricata_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      dns_wannacry branch plants dns.rrname matching one of the
+      WannaCry killswitch domains — exact-match selector.
+
+  - id: dns_oast_in_attack_mix
+    rule_path: rules/network/dns/net_dns_external_service_interaction_domains.yml
+    dataset_path: synth/suricata_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      dns_oast branch plants dns.rrname ending in .burpcollaborator.net
+      / .oast.fun / .oast.live / .interact.sh / .dnslog.cn — all
+      verbatim `query|endswith` selectors.
+
+  - id: http_pwndrop_in_attack_mix
+    rule_path: rules/web/proxy_generic/proxy_pwndrop.yml
+    dataset_path: synth/suricata_attack.ndjson
+    kind: positive
+    min_hits: 30
+    notes: |
+      http_pwndrop branch plants http.url containing `/pwndrop/` —
+      verbatim `c-uri|contains`.
+
+  - id: http_babyshark_in_attack_mix
+    rule_path: rules/web/proxy_generic/proxy_hktl_baby_shark_default_agent_url.yml
+    dataset_path: synth/suricata_attack.ndjson
+    kind: positive
+    min_hits: 20
+    notes: |
+      http_babyshark branch plants http.url containing
+      `momyshark?key=` — verbatim `c-uri|contains`.
+
+  # ----------------------------- negatives -----------------------------
+
+  - id: dns_telegram_negative_against_benign
+    rule_path: rules/network/dns/net_dns_susp_telegram_api.yml
+    dataset_path: synth/suricata_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits api.telegram.org.
+
+  - id: dns_xmr_mining_negative_against_benign
+    rule_path: rules/network/dns/net_dns_pua_cryptocoin_mining_xmr.yml
+    dataset_path: synth/suricata_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits XMR mining-pool hostnames.
+
+  - id: dns_wannacry_killswitch_negative_against_benign
+    rule_path: rules/network/dns/net_dns_wannacry_killswitch_domain.yml
+    dataset_path: synth/suricata_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits WannaCry killswitch domains.
+
+  - id: http_pwndrop_negative_against_benign
+    rule_path: rules/web/proxy_generic/proxy_pwndrop.yml
+    dataset_path: synth/suricata_benign.ndjson
+    kind: negative
+    notes: |
+      Benign generator never emits /pwndrop/ URLs.

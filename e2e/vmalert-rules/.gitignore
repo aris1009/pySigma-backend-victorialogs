@@ -1,0 +1,2 @@
+# vmalert rule-group YAMLs are generated per-test by tests/e2e/test_vmalert_e2e.py.
+sigma.yaml

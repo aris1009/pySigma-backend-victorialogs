@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "python",
+  "packages": {
+    ".": {
+      "package-name": "pysigma-backend-victorialogs",
+      "include-component-in-tag": false,
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "pyproject.toml",
+          "jsonpath": "$.tool.poetry.version"
+        }
+      ]
+    }
+  },
+  "changelog-sections": [
+    { "type": "feat",     "section": "Features" },
+    { "type": "fix",      "section": "Bug Fixes" },
+    { "type": "perf",     "section": "Performance" },
+    { "type": "refactor", "section": "Refactoring" },
+    { "type": "docs",     "section": "Documentation", "hidden": false },
+    { "type": "test",     "section": "Tests", "hidden": true },
+    { "type": "chore",    "section": "Chores", "hidden": true },
+    { "type": "build",    "section": "Build System", "hidden": true },
+    { "type": "ci",       "section": "Continuous Integration", "hidden": true }
+  ],
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false
+}

@@ -1,0 +1,113 @@
+name: E2E (synthetic — per-PR fast lane)
+
+# Synthetic-only ingest correctness gate that runs on every PR.
+#
+# The full e2e harness (Windows EventLog via OTRF + vmalert) runs
+# nightly via e2e-nightly.yml. This workflow exercises the four
+# non-Windows pipelines (caddy / journald / podman / suricata)
+# against deterministic synthetic datasets so a PR that silently
+# breaks ingest surfaces in <2 min instead of overnight.
+#
+# Triggers:
+#   - pull_request: gates merges to main on ingest-level correctness.
+#   - workflow_dispatch: manual run from the Actions tab.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: e2e-fast-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-synth:
+    name: Synthetic e2e (caddy/journald/podman/suricata)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a  # v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: .venv
+          key: venv-e2e-fast-${{ runner.os }}-py3.12-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Cache datasets
+        # Synthetic generators run in milliseconds, so the cache key is
+        # really just the manifest. OTRF entries are also fetched here so
+        # the dataset cache is shared with the nightly workflow on warm
+        # runners — but the fast lane does not load OTRF into VL.
+        id: dataset-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            e2e/datasets
+            e2e/.cache
+          key: e2e-datasets-${{ hashFiles('e2e/datasets.yml') }}
+
+      - name: Materialise datasets (cache miss only)
+        if: steps.dataset-cache.outputs.cache-hit != 'true'
+        run: make e2e-fetch
+
+      - name: Clone SigmaHQ corpus
+        # Pinned-commit clone; the e2e harness reads upstream Sigma rules
+        # from SIGMA_CORPUS_PATH so we test the exact rule a real user
+        # would deploy.
+        run: git clone --depth=1 https://github.com/SigmaHQ/sigma /tmp/sigma-rules
+
+      - name: Bring up VictoriaLogs
+        # `make live-up` starts only the VL service (no Vector, no
+        # vmalert) — the four synthetic harnesses POST NDJSON straight
+        # to VL via /insert/jsonline.
+        run: make live-up
+
+      - name: Run synthetic e2e harness
+        env:
+          SIGMA_CORPUS_PATH: /tmp/sigma-rules
+          VL_E2E_URL: http://localhost:9428
+          E2E_DATASETS_DIR: ${{ github.workspace }}/e2e/datasets
+        run: make e2e-test-synth
+
+      - name: Capture compose logs (on failure)
+        if: failure()
+        run: |
+          mkdir -p compose-logs
+          docker compose -f e2e/docker-compose.yml logs --no-color > compose-logs/docker-compose.log 2>&1 || true
+          echo "::group::docker compose logs"
+          cat compose-logs/docker-compose.log || true
+          echo "::endgroup::"
+
+      - name: Upload compose logs artifact
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: compose-logs-fast-${{ github.run_id }}
+          path: compose-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear down stack
+        if: always()
+        run: make live-down

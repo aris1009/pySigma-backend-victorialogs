@@ -1,0 +1,151 @@
+# Vector pipeline for the Windows EventLog e2e harness.
+#
+# Reads OTRF Security-Datasets dumps (mordor JSON shape: top-level Channel,
+# EventID, TargetImage, etc.), remaps them into the Winlogbeat / Vector ECS
+# winlog.{channel, event_id, event_data.*} layout, and ships them to
+# VictoriaLogs via the JSON-line ingest endpoint.
+#
+# The pipeline (sigma/pipelines/victorialogs/windows_eventlog.py) emits
+# LogsQL queries that select on winlog.channel and winlog.event_id, and
+# match per-rule fields under winlog.event_data.<original>. The remap below
+# is the inverse — it puts events in the same shape Winlogbeat would produce
+# in production so a converted Sigma rule actually finds them.
+
+data_dir = "/var/lib/vector"
+
+# ---- source: NDJSON files dropped into /datasets ------------------------
+
+[sources.otrf]
+type = "file"
+include = ["/datasets/**/*.json"]
+read_from = "beginning"
+
+# ---- transform: parse each line as JSON (file source emits raw .message) -
+
+[transforms.parse_otrf]
+type = "remap"
+inputs = ["otrf"]
+source = '''
+# The file source attaches the source path as `.file`; preserve a stable
+# per-dataset label derived from the basename so tests can scope queries
+# (`dataset_label:="X" AND ...`) when multiple datasets coexist in VL.
+src = .file
+parsed = parse_json!(.message)
+. = parsed
+label = "unknown"
+if is_string(src) {
+  src_str = string!(src)
+  parts = split(src_str, "/")
+  fname = string!(parts[-1])
+  label = replace(fname, ".json", "")
+}
+.dataset_label = label
+'''
+
+# ---- transform: mordor (top-level) -> winlog.* (Winlogbeat ECS) ---------
+
+[transforms.to_winlog]
+type = "remap"
+inputs = ["parse_otrf"]
+source = '''
+# OTRF datasets carry @timestamp values from 2020. VL is configured with a
+# 1-day retention (internal-vl), so original timestamps would be
+# dropped on ingest. Stamp _time = now so events stay queryable for the test
+# run — same approach the synthetic-dataset harness uses
+# (tests/e2e/_runtime.py:ingest_jsonline_stamp_now). The original
+# @timestamp is left in event_data for reference.
+del(."@timestamp")
+ts = format_timestamp!(now(), format: "%Y-%m-%dT%H:%M:%S%.3fZ")
+
+# Pull dataset_label aside before composing the new envelope.
+dataset_label = del(.dataset_label)
+
+# Drop noise injected by Vector or by the mordor capture itself that is not
+# useful for query-time matching and would only inflate event_data.
+del(.host)
+del(.source_type)
+del(.file)
+del(."@version")
+del(.tags)
+del(.EventType)
+del(.EventTime)
+del(.OpcodeValue)
+del(.ThreadID)
+del(.Message)
+
+# Pull mordor top-level metadata into local vars so we can place them under
+# winlog.* without leaving copies behind in event_data.
+channel       = del(.Channel)
+event_id      = del(.EventID)
+computer      = del(.Computer)
+hostname      = del(.Hostname)
+source_name   = del(.SourceName)
+provider_name = del(.Provider_Name)
+provider_guid = del(.ProviderGuid)
+record_id     = del(.EventRecordID)
+task          = del(.Task)
+opcode        = del(.Opcode)
+keywords      = del(.Keywords)
+level         = del(.Level)
+version       = del(.Version)
+
+# Coalesce computer/hostname and provider_name/source_name. VRL's `if` is a
+# statement-only construct in modern releases, so prefer assignment here.
+computer_name = computer
+if computer_name == null {
+  computer_name = hostname
+}
+provider = provider_name
+if provider == null {
+  provider = source_name
+}
+
+# What is left under . is everything else mordor carried at the top level —
+# TargetImage, CommandLine, GrantedAccess, ScriptBlockText, TargetObject,
+# Details, etc. That is exactly what the pipeline expects to find under
+# winlog.event_data.<original>.
+event_data = .
+
+. = {
+  "_time": ts,
+  "dataset_label": dataset_label,
+  "winlog": {
+    "channel":       channel,
+    "event_id":      event_id,
+    "computer_name": computer_name,
+    "provider_name": provider,
+    "provider_guid": provider_guid,
+    "record_id":     record_id,
+    "task":          task,
+    "opcode":        opcode,
+    "keywords":      keywords,
+    "level":         level,
+    "version":       version,
+    "event_data":    event_data,
+  }
+}
+
+# Strip nulls/empty objects so we do not ship sparse winlog.* fields when
+# the source did not carry them.
+. = compact(., recursive: true)
+'''
+
+# ---- sink: VictoriaLogs JSON-line ingest --------------------------------
+
+[sinks.victorialogs]
+type = "http"
+inputs = ["to_winlog"]
+uri = "http://victorialogs:9428/insert/jsonline?_stream_fields=winlog.channel"
+method = "post"
+compression = "none"
+encoding.codec = "json"
+framing.method = "newline_delimited"
+healthcheck.enabled = false
+
+[sinks.victorialogs.batch]
+max_events = 1000
+timeout_secs = 1
+
+[sinks.victorialogs.request]
+retry_attempts = 5
+retry_initial_backoff_secs = 1

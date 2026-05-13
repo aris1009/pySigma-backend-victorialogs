@@ -1,0 +1,73 @@
+[tool.poetry]
+name = "pySigma-backend-victorialogs"
+version = "0.1.0"
+description = "pySigma VictoriaLogs (LogsQL) backend"
+readme = "README.md"
+authors = ["aris1009 <aris@ariscodes.com>"]
+license = "MIT"
+repository = "https://github.com/aris1009/pySigma-backend-victorialogs"
+packages = [{ include = "sigma" }]
+include = [{ path = "sigma/**/py.typed", format = ["sdist", "wheel"] }]
+exclude = ["sigma/_dev/**"]
+
+[tool.poetry.plugins."sigma.backends"]
+victorialogs = "sigma.backends.victorialogs:VictoriaLogsBackend"
+
+[tool.poetry.plugins."sigma.pipelines"]
+victorialogs = "sigma.pipelines.victorialogs:pipelines"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pysigma = "^1.1.0"
+pyyaml = "^6.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.0"
+pytest-cov = "^7.0.0"
+ruff = "^0.15.0"
+mypy = { extras = ["faster-cache"], version = "^1.19.0" }
+types-pyyaml = "^6.0.12"
+hypothesis = "^6.122.0"
+radon = "^6.0.1"
+vulture = "^2.16"
+interrogate = "^1.7.0"
+
+[tool.ruff]
+exclude = ["dist", "build", "env", "venv", ".env", ".venv"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+files = ["sigma"]
+python_version = "3.10"
+strict = true
+explicit_package_bases = true
+namespace_packages = true
+mypy_path = "."
+# pysigma itself is partially typed; opt in to ignore-missing-imports for it.
+[[tool.mypy.overrides]]
+module = ["sigma.collection", "sigma.conditions", "sigma.conversion.*", "sigma.types", "sigma.processing.*", "sigma.exceptions"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Coverage is collected on every pytest run (so `make test-fast` still shows
+# stmt-level missing lines), but the 95% fail-under gate only applies to the
+# full suite — see `make test` / `make cov`. Running unit-only would otherwise
+# trip the gate at ~69% because the corpus tests skip without env vars set.
+#
+# `-m "not e2e and not vmalert"` keeps the heavy Docker/Vector/VL e2e
+# harnesses out of the default suite; opt in via `pytest -m e2e`,
+# `pytest -m vmalert` (or `make e2e-test` / `make vmalert-test`).
+addopts = "-q --cov=sigma --cov-report=term-missing -m \"not e2e and not vmalert\""
+markers = [
+    "e2e: Windows EventLog end-to-end harness — needs e2e/datasets/ and a running VL+Vector stack (see Makefile e2e-up).",
+    "vmalert: vmalert end-to-end harness — needs a running VL+vmalert stack (see Makefile vmalert-up).",
+]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
