@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.1.0...v0.1.1) (2026-05-14)
+
+
+### Bug Fixes
+
+* **ci:** drop unsupported semver-*-days from github-actions cooldown ([#14](https://github.com/aris1009/pySigma-backend-victorialogs/issues/14)) ([bec64d8](https://github.com/aris1009/pySigma-backend-victorialogs/commit/bec64d8ebf569b65467758c66c458c958bdc66d5))
+
 ## 0.1.0 (2026-05-13)
 
 
