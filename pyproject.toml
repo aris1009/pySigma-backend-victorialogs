@@ -62,13 +62,15 @@ testpaths = ["tests"]
 # full suite — see `make test` / `make cov`. Running unit-only would otherwise
 # trip the gate at ~69% because the corpus tests skip without env vars set.
 #
-# `-m "not e2e and not vmalert"` keeps the heavy Docker/Vector/VL e2e
-# harnesses out of the default suite; opt in via `pytest -m e2e`,
-# `pytest -m vmalert` (or `make e2e-test` / `make vmalert-test`).
-addopts = "-q --cov=sigma --cov-report=term-missing -m \"not e2e and not vmalert\""
+# `-m "not e2e and not vmalert and not grafana_provisioning"` keeps the heavy
+# Docker/Vector/VL/Grafana e2e harnesses out of the default suite; opt in via
+# `pytest -m e2e`, `pytest -m vmalert`, `pytest -m grafana_provisioning` (or
+# `make e2e-test` / `make vmalert-test`).
+addopts = "-q --cov=sigma --cov-report=term-missing -m \"not e2e and not vmalert and not grafana_provisioning\""
 markers = [
     "e2e: Windows EventLog end-to-end harness — needs e2e/datasets/ and a running VL+Vector stack (see Makefile e2e-up).",
     "vmalert: vmalert end-to-end harness — needs a running VL+vmalert stack (see Makefile vmalert-up).",
+    "grafana_provisioning: Grafana provisioning structural test — needs Docker; boots grafana/grafana with generated YAML mounted.",
 ]
 
 [build-system]

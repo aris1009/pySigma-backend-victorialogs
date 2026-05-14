@@ -8,6 +8,7 @@ LogsQL reference: https://docs.victoriametrics.com/victorialogs/logsql/
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import re
 from typing import Any, ClassVar
@@ -35,6 +36,27 @@ from sigma.types import (
 
 _VMALERT_ALERT_NAME_RE = re.compile(r"[^A-Za-z0-9_]+")
 
+# Sigma `level` → Grafana `labels.severity`. Critical/high are operator-actionable
+# (`critical`/`warning`); medium and below collapse to `info` because Grafana's
+# Alertmanager routing typically only groups on these three buckets.
+_GRAFANA_SEVERITY_MAP: dict[str, str] = {
+    "critical": "critical",
+    "high": "warning",
+    "medium": "info",
+    "low": "info",
+    "informational": "info",
+}
+
+# VictoriaLogs datasource plugin queryType for the `/select/logsql/stats_query`
+# endpoint. Source: VictoriaMetrics/victorialogs-datasource src/types.ts:40 at
+# commit f487c5b6124cc7ff89bb10620e0c525e7e576041. Alert evaluation is
+# point-in-time, so we use the non-range stats endpoint.
+_VL_PLUGIN_QUERY_TYPE_STATS = "stats"
+_VL_PLUGIN_DATASOURCE_TYPE = "victoriametrics-logs-datasource"
+
+# Grafana server-side expression datasource. Reserved UID per Grafana docs.
+_GRAFANA_EXPR_DS_UID = "__expr__"
+
 
 class VictoriaLogsBackend(TextQueryBackend):
     """Emit LogsQL queries from Sigma rules."""
@@ -43,8 +65,38 @@ class VictoriaLogsBackend(TextQueryBackend):
     formats: ClassVar[dict[str, str]] = {
         "default": "Plain LogsQL queries",
         "vmalert": "vmalert rule group YAML (type: vlogs) for VictoriaLogs",
+        "grafana_alerting": (
+            "Grafana Alerting provisioning YAML (apiVersion: 1) for the "
+            "victoriametrics-logs-datasource plugin"
+        ),
     }
     requires_pipeline: ClassVar[bool] = False
+
+    def __init__(
+        self,
+        *args: Any,
+        grafana_datasource_uid: str = "victorialogs",
+        grafana_folder: str = "sigma",
+        grafana_org_id: int = 1,
+        grafana_interval: str = "1m",
+        grafana_relative_time_from: int = 600,
+        **kwargs: Any,
+    ) -> None:
+        """Backend with optional Grafana Alerting config.
+
+        The Grafana parameters only affect the ``grafana_alerting`` output
+        format. ``grafana_datasource_uid`` must match the UID configured for
+        the VictoriaLogs datasource in the target Grafana install (set via
+        `-O grafana_datasource_uid=<uid>` on the CLI). The placeholder default
+        keeps the emitted YAML valid but will not load until the operator
+        substitutes the real UID.
+        """
+        super().__init__(*args, **kwargs)
+        self.grafana_datasource_uid = grafana_datasource_uid
+        self.grafana_folder = grafana_folder
+        self.grafana_org_id = grafana_org_id
+        self.grafana_interval = grafana_interval
+        self.grafana_relative_time_from = grafana_relative_time_from
 
     precedence: ClassVar[tuple[type[ConditionItem], type[ConditionItem], type[ConditionItem]]] = (
         ConditionNOT,
@@ -320,5 +372,144 @@ class VictoriaLogsBackend(TextQueryBackend):
                     "rules": list(queries),
                 }
             ]
+        }
+        return yaml.safe_dump(document, sort_keys=False)
+
+    # ----- grafana_alerting output format — see docs/mapping.md §15. -----
+    # (Operational ceilings §16 documents the cross-format ceilings.)
+
+    def _grafana_uid(self, rule: SigmaRule) -> str:
+        """Derive a Grafana-valid alert rule UID from a Sigma rule.
+
+        Grafana requires UIDs <= 40 chars, drawn from [A-Za-z0-9_-]. pySigma
+        validates that ``rule.id`` is a UUID (36 chars, conforming charset),
+        so it passes through unchanged. When ``id`` is absent, a stable
+        14-char MD5 prefix of the title gives a deterministic UID.
+        """
+        if rule.id is not None:
+            return str(rule.id)
+        digest = hashlib.md5(rule.title.encode("utf-8")).hexdigest()
+        return digest[:14]
+
+    def finalize_query_grafana_alerting(
+        self,
+        rule: SigmaRule,
+        query: str,
+        _index: int,
+        state: ConversionState,
+    ) -> dict[str, Any]:
+        """Render one Sigma rule as a Grafana provisioned alert rule.
+
+        Emits a two-node ``data`` array: refId A is the VictoriaLogs
+        ``stats_query`` (same `| stats count() as matches | filter matches:>0`
+        wrap we use for vmalert, since alert evaluation hits the same stats
+        endpoint), refId B is a threshold expression that fires when A returns
+        a non-zero count. ``condition: B`` is the canonical Grafana pattern
+        for "fire when the query returned matches".
+
+        Defaults (``for: 0s``, ``noDataState: OK``, ``execErrState: OK``)
+        suit detection rules: any match is enough to fire, and a query error
+        or empty result is not itself an incident.
+        """
+        expr = (
+            query
+            if "| stats " in query
+            else f"{query} | stats count() as matches | filter matches:>0"
+        )
+
+        labels: dict[str, str] = {}
+        if rule.level is not None:
+            level_name = rule.level.name.lower()
+            labels["severity"] = _GRAFANA_SEVERITY_MAP.get(level_name, "info")
+        if rule.id is not None:
+            labels["sigma_id"] = str(rule.id)
+
+        annotations: dict[str, str] = {"summary": rule.title}
+        if rule.description:
+            annotations["description"] = rule.description
+        if rule.references:
+            annotations["references"] = "\n".join(rule.references)
+
+        ds_uid = self.grafana_datasource_uid
+        data_query = {
+            "refId": "A",
+            "queryType": _VL_PLUGIN_QUERY_TYPE_STATS,
+            "relativeTimeRange": {
+                "from": self.grafana_relative_time_from,
+                "to": 0,
+            },
+            "datasourceUid": ds_uid,
+            "model": {
+                "refId": "A",
+                "datasource": {
+                    "type": _VL_PLUGIN_DATASOURCE_TYPE,
+                    "uid": ds_uid,
+                },
+                "expr": expr,
+                "queryType": _VL_PLUGIN_QUERY_TYPE_STATS,
+                "hide": False,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+            },
+        }
+        threshold = {
+            "refId": "B",
+            "queryType": "",
+            "relativeTimeRange": {"from": 0, "to": 0},
+            "datasourceUid": _GRAFANA_EXPR_DS_UID,
+            "model": {
+                "refId": "B",
+                "type": "threshold",
+                "datasource": {
+                    "type": _GRAFANA_EXPR_DS_UID,
+                    "uid": _GRAFANA_EXPR_DS_UID,
+                },
+                "expression": "A",
+                "conditions": [
+                    {
+                        "evaluator": {"type": "gt", "params": [0]},
+                        "operator": {"type": "and"},
+                        "query": {"params": ["B"]},
+                        "reducer": {"type": "last", "params": []},
+                        "type": "query",
+                    }
+                ],
+                "hide": False,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+            },
+        }
+
+        return {
+            "uid": self._grafana_uid(rule),
+            "title": rule.title,
+            "condition": "B",
+            "data": [data_query, threshold],
+            "noDataState": "OK",
+            "execErrState": "OK",
+            "for": "0s",
+            "isPaused": False,
+            "annotations": annotations,
+            "labels": labels,
+        }
+
+    def finalize_output_grafana_alerting(self, queries: list[dict[str, Any]]) -> str:
+        """Wrap rule dicts in the ``apiVersion: 1`` provisioning envelope.
+
+        Single group named ``sigma`` in folder ``sigma`` (both configurable).
+        Drop the emitted file into ``/etc/grafana/provisioning/alerting/`` for
+        Grafana to load on startup.
+        """
+        document = {
+            "apiVersion": 1,
+            "groups": [
+                {
+                    "orgId": self.grafana_org_id,
+                    "name": "sigma",
+                    "folder": self.grafana_folder,
+                    "interval": self.grafana_interval,
+                    "rules": list(queries),
+                }
+            ],
         }
         return yaml.safe_dump(document, sort_keys=False)

@@ -133,10 +133,11 @@ flags when, for example, podman containers ship through journald.
 
 ## Output formats
 
-| Format    | Output                                                     |
-|-----------|------------------------------------------------------------|
-| `default` | Plain LogsQL query strings (one per rule)                  |
-| `vmalert` | vmalert rule group YAML (`type: vlogs`) for VictoriaLogs   |
+| Format             | Output                                                           |
+|--------------------|------------------------------------------------------------------|
+| `default`          | Plain LogsQL query strings (one per rule)                        |
+| `vmalert`          | vmalert rule group YAML (`type: vlogs`) for VictoriaLogs         |
+| `grafana_alerting` | Grafana Alerting provisioning YAML (apiVersion: 1) for the [victoriametrics-logs-datasource](https://grafana.com/grafana/plugins/victoriametrics-logs-datasource/) plugin |
 
 ### vmalert (deploy as alerting rules)
 
@@ -167,6 +168,54 @@ design — change the evaluation window via the group `interval` (default
 (when `type: vlogs` was added). See
 [docs/mapping.md §14](docs/mapping.md#14-vmalert-output-format) for the
 full mapping.
+
+### grafana_alerting (deploy as Grafana provisioned alert rules)
+
+```bash
+sigma convert -t victorialogs -f grafana_alerting \
+    -O grafana_datasource_uid=<your-vl-uid> \
+    rules/*.yml > /etc/grafana/provisioning/alerting/sigma.yaml
+```
+
+The output is an `apiVersion: 1` provisioning document that Grafana loads
+on boot. Pass the UID of the VictoriaLogs datasource as configured in
+your Grafana install — the placeholder default (`victorialogs`) keeps the
+emitted YAML valid but will not load until substituted.
+
+Each Sigma rule becomes one alert rule with a two-node `data` array:
+
+* refId `A` runs the LogsQL stats query against the
+  [victoriametrics-logs-datasource](https://grafana.com/grafana/plugins/victoriametrics-logs-datasource/)
+  plugin's `/select/logsql/stats_query` endpoint (Grafana ≥ 10.4 required).
+* refId `B` is a server-side threshold expression that fires when A returns
+  a non-zero count. `condition: B` is the rule's firing condition.
+
+The Sigma → Grafana severity bucket is:
+
+| Sigma `level`   | `labels.severity` |
+|-----------------|-------------------|
+| `critical`      | `critical`        |
+| `high`          | `warning`         |
+| `medium`        | `info`            |
+| `low`           | `info`            |
+| `informational` | `info`            |
+
+Backend options (`-O <name>=<value>`):
+
+| Option                       | Default        | Meaning                                                |
+|------------------------------|----------------|--------------------------------------------------------|
+| `grafana_datasource_uid`     | `victorialogs` | UID of the VictoriaLogs datasource in your Grafana.    |
+| `grafana_folder`             | `sigma`        | Folder the alert-rule group is stored in.              |
+| `grafana_org_id`             | `1`            | Grafana org ID.                                        |
+| `grafana_interval`           | `1m`           | Group evaluation interval.                             |
+| `grafana_relative_time_from` | `600`          | Lookback in seconds for the query (`to` is always 0).  |
+
+Deploying the rule provisioning file does **not** create the VictoriaLogs
+datasource itself — provision the datasource separately, then point the
+generated rules at it via `grafana_datasource_uid`. A complete deployment
+walkthrough (datasource provisioning + alert provisioning + alert-firing
+sanity check) lives at
+[tests/e2e/grafana_alerting/README.md](tests/e2e/grafana_alerting/README.md).
 
 ## Limitations
 

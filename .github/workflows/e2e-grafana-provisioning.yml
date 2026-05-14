@@ -1,0 +1,85 @@
+name: E2E (Grafana provisioning structural test)
+
+# Structural contract test for the `grafana_alerting` output format.
+#
+# Boots `grafana/grafana` containers (the version floor we promise plus
+# `latest` for forward-drift detection) with backend-generated alert-rule
+# YAML mounted at /etc/grafana/provisioning/alerting/ and asserts Grafana's
+# provisioning loader accepts the file. The two Grafana versions run
+# sequentially inside one pytest process (parametrize, not GHA matrix), so
+# this workflow does not multiply by Python version or OS.
+#
+# Path-filtered: only runs on PRs that touch the backend, the format's
+# tests, or this workflow itself. Docs / pipelines / unrelated PRs pay
+# zero CI cost.
+#
+# Steady-state runtime: ~60-90s warm, ~2-3 min on a cold runner.
+#
+# What this test does NOT cover (intentionally):
+#   - VictoriaLogs datasource plugin acceptance of `model.queryType` /
+#     `expr` shape — exercised by the manual runbook at
+#     `tests/e2e/grafana_alerting/README.md`.
+#   - Actual alert firing — same manual runbook.
+
+on:
+  pull_request:
+    paths:
+      - 'sigma/backends/victorialogs/victorialogs.py'
+      - 'tests/test_backend_grafana_alerting.py'
+      - 'tests/e2e/test_grafana_alerting_provisioning.py'
+      - '.github/workflows/e2e-grafana-provisioning.yml'
+      - 'pyproject.toml'
+      - 'poetry.lock'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: e2e-grafana-provisioning-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  grafana-provisioning:
+    name: Grafana provisioning loader accepts generated YAML
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a  # v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: .venv
+          key: venv-e2e-grafana-provisioning-${{ runner.os }}-py3.12-${{ hashFiles('poetry.lock') }}
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Pre-pull Grafana images
+        # Warm the Docker cache before the test runs so the per-image pull
+        # time doesn't eat into the pytest timeout. The test still works
+        # without this step, but the per-PR latency story is steadier with
+        # the pull pushed into its own visible CI step.
+        run: |
+          docker pull grafana/grafana:10.4.0
+          docker pull grafana/grafana:latest
+
+      - name: Run Grafana provisioning structural test
+        run: poetry run pytest tests/e2e/test_grafana_alerting_provisioning.py -m grafana_provisioning --no-cov -v
