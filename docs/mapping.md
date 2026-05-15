@@ -256,7 +256,98 @@ supply its own. Don't add `_time:` in the backend or you'll double up.
 [VictoriaMetrics changelog](https://docs.victoriametrics.com/victoriametrics/changelog/)
 when pinning.
 
-## 15. Operational ceilings
+## 15. grafana_alerting output format
+
+The `grafana_alerting` output format emits a Grafana Alerting provisioning
+YAML for the
+[victoriametrics-logs-datasource](https://grafana.com/grafana/plugins/victoriametrics-logs-datasource/)
+plugin. Drop the file into `/etc/grafana/provisioning/alerting/` and
+Grafana loads it on boot. Requires Grafana ≥ 10.4 (plugin floor).
+
+```bash
+sigma convert -t victorialogs -f grafana_alerting \
+    -O grafana_datasource_uid=<vl-uid> \
+    path/to/rule.yml > sigma.yaml
+```
+
+Document scaffolding is fixed:
+
+```yaml
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: sigma
+    folder: sigma
+    interval: 1m
+    rules: [...]
+```
+
+Rule-level mapping:
+
+| Sigma          | Grafana alert rule                       |
+|----------------|------------------------------------------|
+| `id`           | `uid` (UUID passes through unchanged)    |
+| no `id`        | `uid` = MD5(`title`)[:14]                |
+| `title`        | `title` (free-form; Grafana has no charset restriction) |
+| `description`  | `annotations.description`                |
+| `title`        | `annotations.summary`                    |
+| `references`   | `annotations.references` (newline-joined)|
+| `id`           | `labels.sigma_id`                        |
+| `level`        | `labels.severity` (mapped, see below)    |
+
+Severity bucket:
+
+| Sigma `level`   | `labels.severity` |
+|-----------------|-------------------|
+| `critical`      | `critical`        |
+| `high`          | `warning`         |
+| `medium`        | `info`            |
+| `low`           | `info`            |
+| `informational` | `info`            |
+
+The Grafana convention is three operator-actionable buckets
+(`critical`/`warning`/`info`) rather than Sigma's five levels; routing
+through Alertmanager typically only groups on these three.
+
+**Two-node `data` array.** Each alert rule emits two nodes:
+
+* `refId: A` — the LogsQL stats query against the VL plugin, with
+  `queryType: stats` so the plugin routes to `/select/logsql/stats_query`.
+  Plain selectors are wrapped as `<query> | stats count() as matches |
+  filter matches:>0` (same wrap as vmalert; correlation rules pass
+  through unwrapped).
+* `refId: B` — a server-side `threshold` expression against the
+  reserved `__expr__` datasource, firing when A's last value is `> 0`.
+
+`condition: B` is the rule's firing condition. Defaults
+(`for: 0s`, `noDataState: OK`, `execErrState: OK`) suit detection rules:
+any match is enough to fire, and a query error or empty result is not
+itself an incident.
+
+**`queryType` is `stats`, not `instant`.** The VL plugin's `QueryType`
+enum (`src/types.ts:38-43`, pinned at commit
+`f487c5b6124cc7ff89bb10620e0c525e7e576041`) routes `stats` to
+`/select/logsql/stats_query`. `instant` returns raw logs, which is not
+what alert evaluation wants.
+
+**Backend options.** Configurable via `-O <name>=<value>`:
+
+| Option                       | Default        | Effect                                                         |
+|------------------------------|----------------|----------------------------------------------------------------|
+| `grafana_datasource_uid`     | `victorialogs` | Plumbed into `data[0].datasourceUid` and `data[0].model.datasource.uid`. |
+| `grafana_folder`             | `sigma`        | `groups[0].folder`.                                            |
+| `grafana_org_id`             | `1`            | `groups[0].orgId`.                                             |
+| `grafana_interval`           | `1m`           | `groups[0].interval`.                                          |
+| `grafana_relative_time_from` | `600`          | `data[0].relativeTimeRange.from` (seconds; `to` is always 0).  |
+
+**Verification.** The structural contract test runs `grafana/grafana`
+in a container and confirms the YAML loads cleanly (see
+`tests/e2e/test_grafana_alerting_provisioning.py`). The VL-plugin-specific
+fields (`queryType`, stats-pipe shape) need an end-to-end smoke test
+against a live Grafana + VL stack — runbook at
+`tests/e2e/grafana_alerting/README.md`.
+
+## 16. Operational ceilings
 
 - **`-search.maxQueryLen`** defaults to 16 KiB. Seven SigmaHQ rules emit
   queries above that ceiling (bulk IOC and emoji blocklists, up to

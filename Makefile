@@ -16,7 +16,7 @@ install:
 
 # Default unit + fuzz suite — fast, no network or corpus.
 test-fast:
-	poetry run pytest tests/test_backend_victorialogs.py tests/test_escape_fuzz.py
+	poetry run pytest tests/test_backend_victorialogs.py tests/test_backend_grafana_alerting.py tests/test_escape_fuzz.py
 
 # Unit + fuzz + corpus + (if env set) live VL. Enforces the 95% coverage gate.
 test:
