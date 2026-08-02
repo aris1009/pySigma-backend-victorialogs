@@ -43,7 +43,7 @@ jobs:
       url: https://pypi.org/p/pySigma-backend-victorialogs
     permissions:
       contents: read
-      id-token: write   # required for OIDC Trusted Publishing
+      id-token: write   # required for OIDC Trusted Publishing + PEP 740 attestations
 
     steps:
       - name: Checkout
@@ -63,5 +63,43 @@ jobs:
       - name: Build wheel + sdist
         run: poetry build
 
+      - name: Upload dist for signing
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: dist-${{ needs.release-please.outputs.tag }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Publish to PyPI (OIDC Trusted Publisher)
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        with:
+          attestations: true
+
+  sign:
+    name: Sigstore-sign and attach to GitHub release
+    needs: [release-please, publish]
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # gh release upload
+      id-token: write   # sigstore OIDC
+
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: dist-${{ needs.release-please.outputs.tag }}
+          path: dist/
+
+      - name: Sign with Sigstore
+        uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc  # v3.3.0
+        with:
+          inputs: ./dist/*.tar.gz ./dist/*.whl
+
+      - name: Attach signatures to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" dist/*.sigstore* --repo "$REPO" --clobber

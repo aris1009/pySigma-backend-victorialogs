@@ -229,6 +229,34 @@ sanity check) lives at
 
 Full details and workarounds: [docs/limitations.md](docs/limitations.md).
 
+## Verifying releases
+
+From v0.2.0 onward, every tagged release is signed with [Sigstore][sigstore]
+via GitHub Actions OIDC. The signature bundles (`*.sigstore.json`) are attached
+to the corresponding GitHub release; the wheel and sdist on PyPI also carry a
+[PEP 740][pep740] attestation (shown as a "Verified" badge on pypi.org).
+
+Verify a downloaded artefact with [`sigstore-python`][sigstore-python]:
+
+```bash
+gh release download v0.2.0 \
+  --repo aris1009/pySigma-backend-victorialogs \
+  --pattern '*.whl' --pattern '*.whl.sigstore.json'
+
+pip install sigstore
+sigstore verify github \
+  --cert-identity "https://github.com/aris1009/pySigma-backend-victorialogs/.github/workflows/release-please.yml@refs/heads/main" \
+  pysigma_backend_victorialogs-0.2.0-py3-none-any.whl
+```
+
+The `cert-identity` is the path of the workflow that produced the signature;
+because release-please publishes on push-to-`main`, the ref is `refs/heads/main`
+rather than the release tag.
+
+[sigstore]: https://www.sigstore.dev/
+[sigstore-python]: https://github.com/sigstore/sigstore-python
+[pep740]: https://peps.python.org/pep-0740/
+
 ## Documentation
 
 - [Getting started](docs/getting_started.md) — install → first query → live VL.
