@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.1.1...v0.2.0) (2026-08-05)
+
+
+### Features
+
+* **backend:** add grafana_alerting provisioning YAML output format ([#22](https://github.com/aris1009/pySigma-backend-victorialogs/issues/22)) ([ac50e7e](https://github.com/aris1009/pySigma-backend-victorialogs/commit/ac50e7e5f23c9ecf7a59f4961005c21cdd04fc03))
+
+
+### Bug Fixes
+
+* **ci:** raise dependabot cooldown to meet zizmor threshold ([#20](https://github.com/aris1009/pySigma-backend-victorialogs/issues/20)) ([e438dc2](https://github.com/aris1009/pySigma-backend-victorialogs/commit/e438dc20868f3884307b60051feac42663b8a7b5))
+
 ## [0.1.1](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.1.0...v0.1.1) (2026-05-14)
 
 
