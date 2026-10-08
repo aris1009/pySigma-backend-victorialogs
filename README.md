@@ -75,9 +75,9 @@ walkthrough including a local VictoriaLogs container.
 |-----------------|------------------------|
 | Python          | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | pySigma         | `^1.1.0`               |
-| VictoriaLogs    | `v1.50.0` (pinned by digest in CI) |
+| VictoriaLogs    | `v1.53.0` (pinned by digest in CI) |
 
-CI pins `victoriametrics/victoria-logs:v1.50.0` by sha256 digest for
+CI pins `victoriametrics/victoria-logs:v1.53.0` by sha256 digest for
 reproducibility; bumps follow the procedure in
 [CONTRIBUTING.md](CONTRIBUTING.md#bumping-the-pinned-victorialogs-image).
 Older or newer VL versions are not actively tested but should work as

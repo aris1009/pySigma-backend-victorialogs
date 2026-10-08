@@ -65,7 +65,7 @@ jobs:
         run: |
           docker run -d --name vl \
             -p 9428:9428 \
-            victoriametrics/victoria-logs:v1.50.0@sha256:ae9bea8d8a3b0fc47c7f0058bcca410e79c84b4a0acd12d4dac71b9302526590 \
+            victoriametrics/victoria-logs:v1.53.0@sha256:251121fa882af99b95ba0c230a4a2f412ea602d2698c64a96c58dc9842bb755d \
             -search.maxQueryLen=524288
           for i in {1..30}; do
             curl -sf http://localhost:9428/health && break
