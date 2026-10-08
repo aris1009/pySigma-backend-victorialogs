@@ -31,7 +31,7 @@ VL datasource plugin. Drop this `docker-compose.yml` somewhere temporary:
 ```yaml
 services:
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.50.0
+    image: victoriametrics/victoria-logs:v1.53.0
     ports: ["9428:9428"]
 
   grafana:

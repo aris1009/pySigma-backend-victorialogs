@@ -83,7 +83,7 @@ The backend quotes any field name that does not match
 `^[A-Za-z_][A-Za-z0-9_.]*$`. Inside a double-quoted name, `"` and `\` are
 backslash-escaped; everything else (including whitespace, unicode, and
 punctuation other than backtick) survives verbatim. This is consistent
-with LogsQL's parser as of `victoriametrics/victoria-logs:v1.50.0` on
+with LogsQL's parser as of `victoriametrics/victoria-logs:v1.53.0` on
 2026-04-28.
 
 If you discover a field-name shape that the backend mis-quotes, please
