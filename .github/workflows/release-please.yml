@@ -24,6 +24,11 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_SECRET }}
+          # Least privilege: only what release-please needs (tags/releases,
+          # release PR, PR labels) instead of the installation's full grant.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
 
       - name: Run release-please
         id: release
