@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.1.1...v0.2.0) (2026-10-08)
+
+
+### Features
+
+* **backend:** add grafana_alerting provisioning YAML output format ([#22](https://github.com/aris1009/pySigma-backend-victorialogs/issues/22)) ([ac50e7e](https://github.com/aris1009/pySigma-backend-victorialogs/commit/ac50e7e5f23c9ecf7a59f4961005c21cdd04fc03))
+* **release:** sigstore-sign artefacts and enable PEP 740 attestations ([#23](https://github.com/aris1009/pySigma-backend-victorialogs/issues/23)) ([ec4db9d](https://github.com/aris1009/pySigma-backend-victorialogs/commit/ec4db9dc3a5f6e1c08fa6464f5737492d7609043))
+
+
+### Bug Fixes
+
+* **backend:** parenthesize correlation search to keep _time scope ([#50](https://github.com/aris1009/pySigma-backend-victorialogs/issues/50)) ([0cc8faf](https://github.com/aris1009/pySigma-backend-victorialogs/commit/0cc8fafcd332b1d68fb79826ded2d0f8d1d1c3e4))
+* **ci:** raise dependabot cooldown to meet zizmor threshold ([#20](https://github.com/aris1009/pySigma-backend-victorialogs/issues/20)) ([e438dc2](https://github.com/aris1009/pySigma-backend-victorialogs/commit/e438dc20868f3884307b60051feac42663b8a7b5))
+
 ## [0.1.1](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.1.0...v0.1.1) (2026-05-14)
 
 

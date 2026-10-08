@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pySigma-backend-victorialogs"
-version = "0.1.1"
+version = "0.2.0"
 description = "pySigma VictoriaLogs (LogsQL) backend"
 readme = "README.md"
 authors = ["aris1009 <aris@ariscodes.com>"]
