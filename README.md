@@ -100,7 +100,7 @@ long as they parse the LogsQL constructs listed in
 | `field\|exists: true`        | `field:*`                                                |
 | `field: null`                | `field:""`                                               |
 | field IN [a, b]              | `field:in("a", "b")`                                     |
-| event_count correlation      | `_time:Xm <search> \| stats by (g) count() as event_count \| filter event_count:>=N` |
+| event_count correlation      | `_time:Xm (<search>) \| stats by (g) count() as event_count \| filter event_count:>=N` |
 
 Full reference: [docs/mapping.md](docs/mapping.md).
 

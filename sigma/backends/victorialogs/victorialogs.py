@@ -213,7 +213,7 @@ class VictoriaLogsBackend(TextQueryBackend):
         "stats": "_time:{timespan} {search} | {aggregate} | {condition}"
     }
 
-    correlation_search_single_rule_expression: ClassVar[str] = "{query}"
+    correlation_search_single_rule_expression: ClassVar[str] = "({query})"
 
     event_count_aggregation_expression: ClassVar[dict[str, str]] = {
         "stats": "stats {groupby}count() as event_count"

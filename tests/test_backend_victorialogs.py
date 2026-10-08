@@ -245,7 +245,7 @@ correlation:
 """,
     )
     assert q == (
-        '_time:5m fieldA:="x" | stats by (fieldB) count() as event_count | filter event_count:>=10'
+        '_time:5m (fieldA:="x") | stats by (fieldB) count() as event_count | filter event_count:>=10'
     )
 
 
@@ -275,7 +275,7 @@ correlation:
 """,
     )
     assert q == (
-        '_time:5m fieldA:="x" | stats by (fieldB) count_uniq(fieldC) as value_count | '
+        '_time:5m (fieldA:="x") | stats by (fieldB) count_uniq(fieldC) as value_count | '
         "filter value_count:>=3"
     )
 

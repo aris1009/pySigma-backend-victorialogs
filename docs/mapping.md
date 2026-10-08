@@ -32,8 +32,8 @@ assertion in `tests/test_corpus_live.py`.
 | field IN [a, b]                   | `field:in("a", "b")`                                                         |
 | keywords: bare strings            | `"badword"`                                                                  |
 | keywords: regex variant           | `_msg:~"pattern"`                                                            |
-| event_count correlation           | `_time:{ts} <search> \| stats by (g) count() as event_count \| filter event_count:>=N` |
-| value_count correlation           | `_time:{ts} <search> \| stats by (g) count_uniq(f) as value_count \| filter value_count:>=N` |
+| event_count correlation           | `_time:{ts} (<search>) \| stats by (g) count() as event_count \| filter event_count:>=N` |
+| value_count correlation           | `_time:{ts} (<search>) \| stats by (g) count_uniq(f) as value_count \| filter value_count:>=N` |
 | temporal / temporal_ordered       | **Unsupported** — see [limitations](limitations.md)                          |
 
 ---
@@ -189,7 +189,7 @@ Only `event_count` and `value_count` are implemented (Loki-envelope
 parity). Both use the LogsQL stats-pipe pattern:
 
 ```text
-_time:{timespan} {search} | stats by ({groupby}) {agg} | filter {field}:{op}{count}
+_time:{timespan} ({search}) | stats by ({groupby}) {agg} | filter {field}:{op}{count}
 ```
 
 Notable details:
@@ -198,6 +198,10 @@ Notable details:
   `event_count` rule actually evaluates over a 5-minute window, not the
   entire retention range. The timespan unit mapping is the identity:
   `s/m/h/d` map straight through.
+- **Parenthesized search.** The search is always wrapped in parentheses.
+  LogsQL binds AND tighter than OR, so a base rule with a top-level OR
+  would otherwise parse as `(_time:5m a) OR b` and count `b` matches
+  outside the timespan.
 - **Filter syntax.** LogsQL's `| filter` clause uses *field-filter*
   syntax (`filter cnt:>N`) — **not** SQL-style `filter cnt > N`. This was
   a Phase-0 surprise; the corresponding test

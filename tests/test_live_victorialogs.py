@@ -136,6 +136,31 @@ correlation:
         field: fieldC
 """,
     ),
+    (
+        "event_count_correlation_top_level_or",
+        """
+title: parent
+name: parent_rule
+status: test
+logsource: { category: test }
+detection:
+    a:
+        fieldA: x
+    b:
+        fieldB: y
+    condition: a or b
+---
+title: corr
+status: test
+correlation:
+    type: event_count
+    rules: parent_rule
+    group-by: fieldC
+    timespan: 5m
+    condition:
+        gte: 10
+""",
+    ),
 ]
 
 

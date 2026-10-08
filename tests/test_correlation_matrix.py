@@ -89,7 +89,7 @@ def test_event_count_timespan_units(backend, timespan):
         _event_count_rule(group_by="fieldB", timespan=timespan, op="gte", count=10),
     )
     assert q == (
-        f'_time:{timespan} fieldA:="x" | stats by (fieldB) count() as event_count'
+        f'_time:{timespan} (fieldA:="x") | stats by (fieldB) count() as event_count'
         " | filter event_count:>=10"
     )
 
@@ -163,7 +163,7 @@ correlation:
 """,
     )
     assert q == (
-        '_time:5m fieldA:="x" | stats by (fieldB, fieldC) count() as event_count'
+        '_time:5m (fieldA:="x") | stats by (fieldB, fieldC) count() as event_count'
         " | filter event_count:>=4"
     )
 
@@ -196,7 +196,7 @@ correlation:
 """,
     )
     assert q == (
-        '_time:1h fieldA:="x" | stats by (fieldB, fieldC) count_uniq(fieldD) as value_count'
+        '_time:1h (fieldA:="x") | stats by (fieldB, fieldC) count_uniq(fieldD) as value_count'
         " | filter value_count:>=5"
     )
 
@@ -205,8 +205,8 @@ correlation:
 
 
 def test_correlation_with_complex_search(backend):
-    """The `<search>` clause carries the converted parent rule verbatim — every
-    construct the base backend supports should compose with the stats pipe."""
+    """The `<search>` clause carries the converted parent rule in parentheses —
+    every construct the base backend supports should compose with the stats pipe."""
     q = _convert(
         backend,
         """
@@ -232,7 +232,43 @@ correlation:
 """,
     )
     assert q == (
-        '_time:5m program:="sshd" AND message:"Failed password" '
+        '_time:5m (program:="sshd" AND message:"Failed password") '
         "| stats by (src_ip) count() as event_count "
         "| filter event_count:>=5"
+    )
+
+
+def test_correlation_search_with_top_level_or_keeps_time_scope(backend):
+    """LogsQL binds AND tighter than OR, so an unparenthesized top-level OR
+    would parse as `(_time:5m fieldA:="x") OR fieldB:="y"` and drop the
+    timespan filter from the second branch."""
+    q = _convert(
+        backend,
+        """
+title: parent
+name: parent_rule
+status: test
+logsource: { category: test }
+detection:
+    a:
+        fieldA: x
+    b:
+        fieldB: y
+    condition: a or b
+---
+title: corr
+status: test
+correlation:
+    type: event_count
+    rules: parent_rule
+    group-by: fieldC
+    timespan: 5m
+    condition:
+        gte: 10
+""",
+    )
+    assert q == (
+        '_time:5m (fieldA:="x" OR fieldB:="y") '
+        "| stats by (fieldC) count() as event_count "
+        "| filter event_count:>=10"
     )
