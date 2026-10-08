@@ -28,7 +28,6 @@ jobs:
           # release PR, PR labels) instead of the installation's full grant.
           permission-contents: write
           permission-pull-requests: write
-          permission-issues: write
 
       - name: Run release-please
         id: release
