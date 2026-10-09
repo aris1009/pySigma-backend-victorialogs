@@ -26,8 +26,13 @@ jobs:
           private-key: ${{ secrets.RELEASE_PLEASE_APP_SECRET }}
           # Least privilege: only what release-please needs (tags/releases,
           # release PR, PR labels) instead of the installation's full grant.
+          # workflows: write is required to tag a release at the release PR's
+          # merge commit: with contents: write alone GitHub only lets the token
+          # tag the current branch head, and release-please targets the merge
+          # commit (which is frequently an ancestor once main has advanced).
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
 
       - name: Run release-please
         id: release
