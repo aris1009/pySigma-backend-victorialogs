@@ -214,6 +214,9 @@ class VictoriaLogsBackend(TextQueryBackend):
     }
 
     correlation_search_single_rule_expression: ClassVar[str] = "({query})"
+    correlation_search_multi_rule_expression: ClassVar[str] = "({queries})"
+    correlation_search_multi_rule_query_expression: ClassVar[str] = "({query})"
+    correlation_search_multi_rule_query_expression_joiner: ClassVar[str] = " OR "
 
     event_count_aggregation_expression: ClassVar[dict[str, str]] = {
         "stats": "stats {groupby}count() as event_count"

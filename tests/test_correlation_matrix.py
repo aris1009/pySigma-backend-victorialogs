@@ -272,3 +272,56 @@ correlation:
         "| stats by (fieldC) count() as event_count "
         "| filter event_count:>=10"
     )
+
+
+# ----------------------------- multi rules search -----------------------
+
+
+def test_correlation_search_with_multi_rules(backend):
+    """Multi rules correlation searches are joined with OR so
+    each query should be independently encapsulated into parentheses.
+    """
+    q = _convert(
+        backend,
+        """
+title: parent
+name: parent_rule
+status: test
+logsource: { category: test }
+detection:
+    a:
+        fieldA: x
+    b:
+        fieldB: y
+    condition: a and b
+---
+title: parent2
+name: parent_rule2
+status: test
+logsource: { category: test }
+detection:
+    a:
+        fieldA: y
+    b:
+        fieldB: x
+    condition: a and b
+---
+title: corr
+status: test
+correlation:
+    type: event_count
+    rules:
+    - parent_rule
+    - parent_rule2
+    group-by: fieldC
+    timespan: 5m
+    condition:
+        gte: 10
+""",
+    )
+    assert q == (
+        '_time:5m ((fieldA:="x" AND fieldB:="y") OR '
+        '(fieldA:="y" AND fieldB:="x")) '
+        "| stats by (fieldC) count() as event_count "
+        "| filter event_count:>=10"
+    )

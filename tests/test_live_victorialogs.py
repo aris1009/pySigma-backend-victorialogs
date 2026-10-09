@@ -113,6 +113,41 @@ correlation:
 """,
     ),
     (
+        "multi_rule_event_count_correlation",
+        """
+title: parent
+name: parent_rule
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: x
+    condition: sel
+---
+title: parent
+name: parent_rule2
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldB: y
+        fieldD: z
+    condition: sel
+---
+title: corr
+status: test
+correlation:
+    type: event_count
+    rules:
+      - parent_rule
+      - parent_rule2
+    group-by: fieldC
+    timespan: 5m
+    condition:
+        gte: 10
+""",
+    ),
+    (
         "value_count_correlation",
         """
 title: parent

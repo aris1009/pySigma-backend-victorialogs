@@ -33,7 +33,9 @@ assertion in `tests/test_corpus_live.py`.
 | keywords: bare strings            | `"badword"`                                                                  |
 | keywords: regex variant           | `_msg:~"pattern"`                                                            |
 | event_count correlation           | `_time:{ts} (<search>) \| stats by (g) count() as event_count \| filter event_count:>=N` |
+| multiple event_count correlation  | `_time:{ts} ((<searchA>) OR (<searchB>)) \| stats by (g) count() as event_count \| filter event_count:>=N` |
 | value_count correlation           | `_time:{ts} (<search>) \| stats by (g) count_uniq(f) as value_count \| filter value_count:>=N` |
+| multiple value_count correlation  | `_time:{ts} ((<searchA>) OR (<searchB>)) \| stats by (g) count_uniq(f) as value_count \| filter value_count:>=N` |
 | temporal / temporal_ordered       | **Unsupported** — see [limitations](limitations.md)                          |
 
 ---
