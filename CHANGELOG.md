@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.2.0...v0.3.0) (2026-10-09)
+
+
+### Features
+
+* **backend:** multi-rule correlation search ([#49](https://github.com/aris1009/pySigma-backend-victorialogs/issues/49)) ([e6b50c3](https://github.com/aris1009/pySigma-backend-victorialogs/commit/e6b50c31637c9d25e349d0e429d92d24174e8dcb))
+
+
+### Bug Fixes
+
+* **ci:** grant workflows permission to release-please app token ([#56](https://github.com/aris1009/pySigma-backend-victorialogs/issues/56)) ([e46600d](https://github.com/aris1009/pySigma-backend-victorialogs/commit/e46600d9d92e6e0d322cb066c3c9a44db65dc0d6))
+
 ## [0.2.0](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.1.1...v0.2.0) (2026-10-08)
 
 
