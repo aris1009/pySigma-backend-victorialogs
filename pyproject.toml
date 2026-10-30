@@ -24,7 +24,7 @@ pyyaml = "^6.0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.0"
 pytest-cov = "^7.0.0"
-ruff = ">=0.15,<0.17"
+ruff = ">=0.15,<0.18"
 mypy = ">=1.19,<3.0"
 types-pyyaml = "^6.0.12"
 hypothesis = "^6.122.0"
@@ -33,6 +33,10 @@ vulture = "^2.16"
 [tool.ruff]
 exclude = ["dist", "build", "env", "venv", ".env", ".venv"]
 line-length = 100
+# Keep lint suggestions compatible with the oldest supported interpreter
+# (`python = "^3.10"` above). Without this, ruff 0.17's UP017 wants
+# `datetime.UTC`, which only exists on Python 3.11+.
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "C90"]
