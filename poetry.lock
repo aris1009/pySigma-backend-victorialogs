@@ -972,14 +972,14 @@ files = [
 
 [[package]]
 name = "packaging"
-version = "26.2"
+version = "26.3"
 description = "Core utilities for Python packages"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 groups = ["main", "dev"]
 files = [
-    {file = "packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e"},
-    {file = "packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661"},
+    {file = "packaging-26.3-py3-none-any.whl", hash = "sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"},
+    {file = "packaging-26.3.tar.gz", hash = "sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79"},
 ]
 
 [[package]]
@@ -1047,14 +1047,14 @@ diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
 name = "pysigma"
-version = "1.5.0"
+version = "1.5.1"
 description = "Sigma rule processing and conversion tools"
 optional = false
 python-versions = "<4.0,>=3.10"
 groups = ["main"]
 files = [
-    {file = "pysigma-1.5.0-py3-none-any.whl", hash = "sha256:871452a262aedb17d9e85344142944c5a0ac50e8b57408ec355efeb1329231b6"},
-    {file = "pysigma-1.5.0.tar.gz", hash = "sha256:2c258cf676d2896c94279fb54c7eea664118cf08285bde122b4df75cc7b6b194"},
+    {file = "pysigma-1.5.1-py3-none-any.whl", hash = "sha256:1e6e080bde31db6039eb5d87d43322bf416534f30048091c65038e88225b8200"},
+    {file = "pysigma-1.5.1.tar.gz", hash = "sha256:5f27ea435bc53480b43f9e385104c6df3d473715321d662a52a1fc283ab0b8db"},
 ]
 
 [package.dependencies]
@@ -1062,11 +1062,11 @@ diskcache = ">=5.6.3,<6.0.0"
 diskcache-stubs = ">=5.6.3"
 jinja2 = ">=3.1.6,<4.0.0"
 jq = ">=1.12,<2.0"
-packaging = ">=26.0,<27.0"
+packaging = ">=26.3,<27.0"
 pyparsing = ">=3.2.5,<4.0.0"
 pyyaml = ">=6.0.3,<7.0.0"
 requests = ">=2.32.5,<3.0.0"
-types-pyyaml = ">=6.0.12.20260724,<7.0.0.0"
+types-pyyaml = ">=6.0.12.20260815,<7.0.0.0"
 typing-extensions = ">=4.16.0,<5.0.0"
 
 [[package]]
@@ -1318,14 +1318,14 @@ files = [
 
 [[package]]
 name = "types-pyyaml"
-version = "6.0.12.20260724"
+version = "6.0.12.20261103"
 description = "Typing stubs for PyYAML"
 optional = false
 python-versions = ">=3.10"
 groups = ["main", "dev"]
 files = [
-    {file = "types_pyyaml-6.0.12.20260724-py3-none-any.whl", hash = "sha256:d57db930a4b2efbc57cf430ec8882765d246929432fa253092f383902329a453"},
-    {file = "types_pyyaml-6.0.12.20260724.tar.gz", hash = "sha256:3c1ce1bb73cd5ec02e90390c2b1f00e810d241d8825fd73ff359696839271b6b"},
+    {file = "types_pyyaml-6.0.12.20261103-py3-none-any.whl", hash = "sha256:444654c61f635dab82c092a511aa96a0ce31164810784b9a37314e3e56532ac8"},
+    {file = "types_pyyaml-6.0.12.20261103.tar.gz", hash = "sha256:7a1b5f837881dd35d5448b5f18275164f89f206185e31e8eae6e0b42607bc001"},
 ]
 
 [[package]]
