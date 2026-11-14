@@ -112,7 +112,7 @@ That's the full happy path: a Sigma rule → LogsQL → query results.
 ## Next steps
 
 - [Mapping reference](mapping.md) — what every Sigma feature compiles to.
-- [Limitations](limitations.md) — temporal correlations,
+- [Limitations](limitations.md) — three-rule ordering,
   `-search.maxQueryLen` ceiling, single-char wildcards.
 - [Architecture](architecture.md) — how the backend works, for
   contributors.

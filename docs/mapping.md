@@ -36,7 +36,8 @@ assertion in `tests/test_corpus_live.py`.
 | multiple event_count correlation  | `_time:{ts} ((<searchA>) OR (<searchB>)) \| stats by (g) count() as event_count \| filter event_count:>=N` |
 | value_count correlation           | `_time:{ts} (<search>) \| stats by (g) count_uniq(f) as value_count \| filter value_count:>=N` |
 | multiple value_count correlation  | `_time:{ts} ((<searchA>) OR (<searchB>)) \| stats by (g) count_uniq(f) as value_count \| filter value_count:>=N` |
-| temporal / temporal_ordered       | **Unsupported** — see [limitations](limitations.md)                          |
+| temporal correlation              | `_time:{ts} ((<q0>) OR (<q1>)) \| stats by (g) count() if ((<q0>)) as r0, count() if ((<q1>)) as r1 \| filter r0:>0 r1:>0` |
+| temporal_ordered (2 rules)        | `_time:{ts} ((<q0>) OR (<q1>)) \| stats by (g) min(_time) if ((<q0>)) as t0, max(_time) if ((<q1>)) as t1 \| filter t0:* t1:* t0:lt_field(t1)` |
 
 ---
 
@@ -187,8 +188,8 @@ LogsQL's full-text-message field `_msg` only when it is a regex:
 
 ## 13. Correlations
 
-Only `event_count` and `value_count` are implemented (Loki-envelope
-parity). Both use the LogsQL stats-pipe pattern:
+`event_count`, `value_count`, `temporal` and two-rule `temporal_ordered`
+are implemented. The count types use the LogsQL stats-pipe pattern:
 
 ```text
 _time:{timespan} ({search}) | stats by ({groupby}) {agg} | filter {field}:{op}{count}
@@ -208,9 +209,43 @@ Notable details:
   syntax (`filter cnt:>N`) — **not** SQL-style `filter cnt > N`. This was
   a Phase-0 surprise; the corresponding test
   (`test_event_count_correlation`) pins it.
-- **`temporal` / `temporal_ordered`** are not registered in
-  `correlation_methods`, so pySigma raises `NotImplementedError` for any
-  rule that requires multi-event window joining. See
+
+### Temporal correlations
+
+`temporal` means "every referenced rule matched within the timespan, on the
+same group-by values". LogsQL's conditional stats express that in one query
+without a join, so each rule becomes one `count() if (...)` clause:
+
+```text
+_time:5m ((q0) OR (q1)) | stats by (host) count() if ((q0)) as r0, count() if ((q1)) as r1 | filter r0:>0 r1:>0
+```
+
+- **Each rule query is parenthesised inside `if (...)`.** A base rule whose
+  condition is `a or b` converts to `fieldA:="x" OR fieldB:="y"` with no
+  outer parentheses; without the wrapper the conditional would end early
+  and attach the second branch to the stats pipe
+  (`test_temporal_base_rule_with_top_level_or`).
+- **Several queries per rule are ORed inside one `if (...)`.** "The rule
+  matched" means any of its converted queries hit.
+- **`temporal_ordered` (exactly two rules)** adds arrival order:
+
+  ```text
+  _time:5m ((q0) OR (q1)) | stats by (host)
+      min(_time) if ((q0)) as t0, max(_time) if ((q1)) as t1
+      | filter t0:* t1:* t0:lt_field(t1)
+  ```
+
+  `min(A) < max(B)` is exactly "some A happened before some B".
+  `lt_field` compares timestamps as times, not lexicographically.
+- **The `t0:* t1:*` guards are load-bearing.** When rule A never fired,
+  `min(_time) if ((q0))` leaves `t0` empty and `lt_field` accepts the
+  comparison, so a host that only matched rule B was reported as a match.
+  Verified against VictoriaLogs v1.53.0; pinned by the `b_only` e2e case.
+- **Rejected inputs.** Correlation `aliases` and any condition other than
+  the default `gte: <number of rules>` raise `SigmaConversionError`:
+  "at least N of M rules" has no single-query LogsQL form. Three or more
+  rules in `temporal_ordered` raise `NotImplementedError` — pairwise
+  min/max checks accept B,A,C,B, which is not an A→B→C chain. See
   [limitations](limitations.md).
 
 ## 14. vmalert output format

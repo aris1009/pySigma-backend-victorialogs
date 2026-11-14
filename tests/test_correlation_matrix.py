@@ -3,14 +3,14 @@ Correlation matrix.
 
 Pins the LogsQL stats-pipe shape across:
 - `event_count` and `value_count`
+- `temporal` and two-rule `temporal_ordered`
 - single, multi-field, and absent group-by
 - every supported timespan unit (s/m/h/d)
 - every supported condition operator (gte/lte/gt/lt/eq)
-
-Temporal correlations are intentionally absent — see test_backend_victorialogs.py::test_temporal_correlation_is_unsupported.
 """
 
 import pytest
+import yaml
 from sigma.collection import SigmaCollection
 
 from sigma.backends.victorialogs import VictoriaLogsBackend
@@ -325,3 +325,174 @@ correlation:
         "| stats by (fieldC) count() as event_count "
         "| filter event_count:>=10"
     )
+
+
+# ----------------------------- temporal correlations --------------------------
+
+_TWO_PARENTS = """
+title: parent_a
+name: a
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: a
+    condition: sel
+---
+title: parent_b
+name: b
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: b
+    condition: sel
+"""
+
+
+def test_temporal_two_rules(backend):
+    q = _convert(
+        backend,
+        _TWO_PARENTS
+        + """
+---
+title: corr
+status: test
+correlation:
+    type: temporal
+    rules: [a, b]
+    group-by: actor
+    timespan: 5m
+""",
+    )
+    assert q == (
+        '_time:5m ((fieldA:="a") OR (fieldA:="b")) '
+        "| stats by (actor) "
+        'count() if ((fieldA:="a")) as r0, count() if ((fieldA:="b")) as r1 '
+        "| filter r0:>0 r1:>0"
+    )
+
+
+def test_temporal_three_rules_multi_field_groupby(backend):
+    q = _convert(
+        backend,
+        _TWO_PARENTS
+        + """
+---
+title: parent_c
+name: c
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldC: c
+    condition: sel
+---
+title: corr
+status: test
+correlation:
+    type: temporal
+    rules: [a, b, c]
+    group-by:
+        - actor
+        - host
+    timespan: 1h
+""",
+    )
+    assert q == (
+        '_time:1h ((fieldA:="a") OR (fieldA:="b") OR (fieldC:="c")) '
+        "| stats by (actor, host) "
+        'count() if ((fieldA:="a")) as r0, count() if ((fieldA:="b")) as r1, '
+        'count() if ((fieldC:="c")) as r2 '
+        "| filter r0:>0 r1:>0 r2:>0"
+    )
+
+
+def test_temporal_base_rule_with_top_level_or(backend):
+    """Each `if (...)` must wrap the whole rule query: a bare `a OR b` would
+    end the conditional early and attach the second branch to the stats pipe."""
+    q = _convert(
+        backend,
+        """
+title: parent_a
+name: a
+status: test
+logsource: { category: test }
+detection:
+    a:
+        fieldA: x
+    b:
+        fieldB: y
+    condition: a or b
+---
+title: parent_b
+name: b
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: b
+    condition: sel
+---
+title: corr
+status: test
+correlation:
+    type: temporal
+    rules: [a, b]
+    group-by: actor
+    timespan: 5m
+""",
+    )
+    assert q == (
+        '_time:5m ((fieldA:="x" OR fieldB:="y") OR (fieldA:="b")) '
+        "| stats by (actor) "
+        'count() if ((fieldA:="x" OR fieldB:="y")) as r0, count() if ((fieldA:="b")) as r1 '
+        "| filter r0:>0 r1:>0"
+    )
+
+
+def test_temporal_ordered_two_rules(backend):
+    q = _convert(
+        backend,
+        _TWO_PARENTS
+        + """
+---
+title: corr
+status: test
+correlation:
+    type: temporal_ordered
+    rules: [a, b]
+    group-by: actor
+    timespan: 5m
+""",
+    )
+    assert q == (
+        '_time:5m ((fieldA:="a") OR (fieldA:="b")) '
+        "| stats by (actor) "
+        'min(_time) if ((fieldA:="a")) as t0, max(_time) if ((fieldA:="b")) as t1 '
+        # the existence guards reject a group that only matches rule B
+        "| filter t0:* t1:* t0:lt_field(t1)"
+    )
+
+
+def test_temporal_vmalert_passthrough(backend):
+    """A temporal query already aggregates, so vmalert must not wrap it again."""
+    yaml_text = (
+        _TWO_PARENTS
+        + """
+---
+title: corr
+status: test
+correlation:
+    type: temporal
+    rules: [a, b]
+    group-by: actor
+    timespan: 5m
+"""
+    )
+    query = _convert(backend, yaml_text)
+    rendered = backend.convert(SigmaCollection.from_yaml(yaml_text), output_format="vmalert")
+    assert isinstance(rendered, str)
+    expr = yaml.safe_load(rendered)["groups"][0]["rules"][0]["expr"]
+    assert expr == query
+    assert "stats count() as matches" not in expr

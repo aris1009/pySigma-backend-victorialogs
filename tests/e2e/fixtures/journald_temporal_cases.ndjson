@@ -1,0 +1,5 @@
+{"offset_ms":0,"_HOSTNAME":"host-b","SYSLOG_IDENTIFIER":"systemd"}
+{"offset_ms":6766,"_HOSTNAME":"host-a","SYSLOG_IDENTIFIER":"systemd"}
+{"offset_ms":64698,"_HOSTNAME":"host-a","SYSLOG_IDENTIFIER":"sudo"}
+{"offset_ms":75977,"_HOSTNAME":"host-a","SYSLOG_IDENTIFIER":"systemd"}
+{"offset_ms":367502,"_HOSTNAME":"host-a","SYSLOG_IDENTIFIER":"systemd"}

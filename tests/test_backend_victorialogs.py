@@ -10,6 +10,7 @@ re-validated.
 
 import pytest
 from sigma.collection import SigmaCollection
+from sigma.exceptions import SigmaConversionError
 
 from sigma.backends.victorialogs import VictoriaLogsBackend
 
@@ -394,10 +395,9 @@ def test_literal_question_escape_with_backslash_run(backend):
     assert q == 'path:="\\\\?\\\\GLOBALROOT\\\\Device"'
 
 
-def test_temporal_correlation_is_unsupported(backend):
-    """LogsQL has no native multi-event sliding-window join. pySigma raises
-    NotImplementedError when it tries to build the multi-rule search expression
-    that we deliberately leave undefined."""
+def test_temporal_correlation_condition_must_match_all_rules(backend):
+    """`at least N of M rules` has no single-query LogsQL form, so it is
+    rejected instead of approximated."""
     yaml = """
 title: parent_a
 name: a
@@ -424,8 +424,88 @@ correlation:
     rules: [a, b]
     group-by: actor
     timespan: 5m
+    condition:
+        gte: 1
 """
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(SigmaConversionError, match="at least N of M"):
+        backend.convert(SigmaCollection.from_yaml(yaml))
+
+
+def test_temporal_correlation_aliases_rejected(backend):
+    yaml = """
+title: parent_a
+name: a
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: a
+    condition: sel
+---
+title: parent_b
+name: b
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: b
+    condition: sel
+---
+title: corr
+status: test
+correlation:
+    type: temporal
+    rules: [a, b]
+    group-by: actor
+    timespan: 5m
+    aliases:
+        actor:
+            a: user
+"""
+    with pytest.raises(SigmaConversionError, match="aliases"):
+        backend.convert(SigmaCollection.from_yaml(yaml))
+
+
+def test_temporal_ordered_three_rules_unsupported(backend):
+    """Pairwise min/max checks accept B,A,C,B, which is not an A->B->C chain,
+    so three-rule ordering is refused rather than guessed."""
+    yaml = """
+title: parent_a
+name: a
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: a
+    condition: sel
+---
+title: parent_b
+name: b
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: b
+    condition: sel
+---
+title: parent_c
+name: c
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: c
+    condition: sel
+---
+title: corr
+status: test
+correlation:
+    type: temporal_ordered
+    rules: [a, b, c]
+    group-by: actor
+    timespan: 5m
+"""
+    with pytest.raises(NotImplementedError, match="exactly two rules"):
         backend.convert(SigmaCollection.from_yaml(yaml))
 
 
