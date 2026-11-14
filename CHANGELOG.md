@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.3.0...v0.4.0) (2026-11-14)
+
+
+### Features
+
+* **correlation:** support temporal and two-rule temporal_ordered ([#70](https://github.com/aris1009/pySigma-backend-victorialogs/issues/70)) ([6c6cb66](https://github.com/aris1009/pySigma-backend-victorialogs/commit/6c6cb660750ff582aeab4f43c39a365c920e06a9))
+
 ## [0.3.0](https://github.com/aris1009/pySigma-backend-victorialogs/compare/v0.2.0...v0.3.0) (2026-11-04)
 
 
