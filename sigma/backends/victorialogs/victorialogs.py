@@ -24,7 +24,12 @@ from sigma.conditions import (
 from sigma.conversion.base import TextQueryBackend
 from sigma.conversion.deferred import DeferredQueryExpression
 from sigma.conversion.state import ConversionState
-from sigma.exceptions import SigmaTypeError
+from sigma.correlations import (
+    SigmaCorrelationCondition,
+    SigmaCorrelationConditionOperator,
+    SigmaCorrelationRule,
+)
+from sigma.exceptions import SigmaConversionError, SigmaTypeError
 from sigma.rule import SigmaRule
 from sigma.types import (
     SigmaCIDRExpression,
@@ -243,6 +248,95 @@ class VictoriaLogsBackend(TextQueryBackend):
     value_count_condition_expression: ClassVar[dict[str, str]] = {
         "stats": "filter value_count:{op}{count}"
     }
+
+    # ----- Temporal correlations — see docs/mapping.md §13. -----
+    # LogsQL's conditional stats express both types in one query: each referenced
+    # rule becomes a `count() if (...)` / `min|max(_time) if (...)` clause, so no
+    # join pipe is needed. pySigma's templating only passes the combined search,
+    # hence the overrides below.
+
+    def _correlation_rule_search(self, rule: SigmaCorrelationRule) -> list[str]:
+        """One parenthesised search per referenced rule.
+
+        A rule that converts to several queries contributes a single
+        `(q1) OR (q2)` group: "the rule matched" means any of its queries hit.
+        """
+        return [
+            " OR ".join(
+                f"({self.convert_correlation_search_multi_rule_query_postprocess(query)})"
+                for query in reference.rule.get_conversion_result()
+            )
+            for reference in rule.referenced_rules
+        ]
+
+    def _validate_temporal_rule(self, rule: SigmaCorrelationRule) -> None:
+        """Reject inputs LogsQL cannot express exactly, with actionable errors."""
+        if len(rule.aliases) > 0:
+            raise SigmaConversionError(
+                rule,
+                rule.source,
+                "Correlation field aliases are not supported by this backend.",
+            )
+        condition = rule.condition
+        if isinstance(condition, SigmaCorrelationCondition) and not (
+            condition.op == SigmaCorrelationConditionOperator.GTE
+            and condition.count == len(rule.referenced_rules)
+        ):
+            raise SigmaConversionError(
+                rule,
+                rule.source,
+                "Only 'all referenced rules matched' temporal conditions are supported; "
+                "'at least N of M rules' has no single-query LogsQL form.",
+            )
+
+    def _convert_temporal_rule(
+        self, rule: SigmaCorrelationRule, method: str, *, ordered: bool
+    ) -> list[str]:
+        self._validate_temporal_rule(rule)
+        searches = self._correlation_rule_search(rule)
+        if ordered:
+            if len(searches) != 2:
+                raise NotImplementedError(
+                    "temporal_ordered is supported for exactly two rules only: ordering "
+                    "across three or more rules has no exact LogsQL form."
+                )
+            # min(A) < max(B) is exactly "some A before some B".
+            clauses = [
+                f"min(_time) if ({searches[0]}) as t0",
+                f"max(_time) if ({searches[1]}) as t1",
+            ]
+            # A host with B but no A leaves t0 empty, which lt_field would accept.
+            condition = "filter t0:* t1:* t0:lt_field(t1)"
+        else:
+            clauses = [
+                f"count() if ({search}) as r{index}" for index, search in enumerate(searches)
+            ]
+            condition = "filter " + " ".join(f"r{index}:>0" for index in range(len(searches)))
+
+        groupby = self.convert_correlation_aggregation_groupby_from_template(rule.group_by, method)
+        aggregate = f"stats {groupby}" + ", ".join(clauses)
+        timespan = self.convert_timespan(rule.timespan, method)
+        return [
+            f"_time:{timespan} {self.convert_correlation_search(rule)} | {aggregate} | {condition}"
+        ]
+
+    def convert_correlation_temporal_rule(
+        self,
+        rule: SigmaCorrelationRule,
+        _output_format: str | None = None,
+        method: str = "default",
+    ) -> list[str]:
+        """Convert a `temporal` correlation to conditional stats."""
+        return self._convert_temporal_rule(rule, method, ordered=False)
+
+    def convert_correlation_temporal_ordered_rule(
+        self,
+        rule: SigmaCorrelationRule,
+        _output_format: str | None = None,
+        method: str = "default",
+    ) -> list[str]:
+        """Convert a two-rule `temporal_ordered` correlation to conditional stats."""
+        return self._convert_temporal_rule(rule, method, ordered=True)
 
     # ----- Custom conversion overrides -----
 

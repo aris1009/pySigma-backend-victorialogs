@@ -4,22 +4,26 @@ What this backend cannot do, and what to do about it. Every entry below is
 deliberate — most are LogsQL parser realities rather than backend gaps —
 and most have a workaround.
 
-## Temporal correlations are not supported
+## Temporal correlation limits
 
-Sigma's `temporal` and `temporal_ordered` correlation types describe a
-*window join* across multiple distinct rules: e.g. "rule A fires within
-5 minutes of rule B, on the same host". LogsQL has no native primitive
-for this — it is a single-stream stats engine, not a join engine.
+`temporal` is supported, and `temporal_ordered` is supported for exactly two
+rules (see [mapping §13](mapping.md#13-correlations)). Two shapes remain
+unsupported because LogsQL cannot express them exactly:
 
-The backend deliberately does not register `temporal` /
-`temporal_ordered` in `correlation_methods`. As a result, pySigma raises
-`NotImplementedError` when it tries to convert such a rule.
+- **`temporal_ordered` with three or more rules.** Pairwise `min`/`max`
+  checks accept the sequence B,A,C,B, which is not an A→B→C chain, so the
+  backend raises `NotImplementedError` instead of guessing.
+- **Conditions other than "all referenced rules matched".** That is Sigma's
+  default for temporal, and the emitted `filter r0:>0 r1:>0` encodes it. Any
+  other condition (e.g. `gte: 1` for "any rule") raises
+  `SigmaConversionError`: LogsQL's `math` pipe has no comparison operators,
+  so per-rule flags cannot be summed into a count.
 
-**Workaround:** none in-process. Implementing this correctly requires a
-two-stage pipeline (issue separate searches, correlate results in the
-calling layer), which is out of scope for a query-shape backend. The unit
-test `test_temporal_correlation_not_supported` pins the
-`NotImplementedError` so the limitation is documented in the test suite.
+Correlation `aliases` are rejected for every correlation type.
+
+**Workaround:** for an ordered chain of three or more rules, emit one
+ordered rule per adjacent pair and correlate the results in the calling
+layer.
 
 ## `-search.maxQueryLen` ceiling
 

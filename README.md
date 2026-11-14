@@ -101,6 +101,7 @@ long as they parse the LogsQL constructs listed in
 | `field: null`                | `field:""`                                               |
 | field IN [a, b]              | `field:in("a", "b")`                                     |
 | event_count correlation      | `_time:Xm (<search>) \| stats by (g) count() as event_count \| filter event_count:>=N` |
+| temporal correlation         | `_time:Xm ((A) OR (B)) \| stats by (g) count() if ((A)) as r0, count() if ((B)) as r1 \| filter r0:>0 r1:>0` |
 
 Full reference: [docs/mapping.md](docs/mapping.md).
 
@@ -219,8 +220,10 @@ sanity check) lives at
 
 ## Limitations
 
-- **Temporal correlations** (`temporal`, `temporal_ordered`) are
-  unsupported — LogsQL has no native multi-event window join.
+- **Temporal correlations** (`temporal`, and `temporal_ordered` for two
+  rules) are supported via conditional stats. Three-rule ordering and
+  "at least N of M rules" conditions are not expressible — see
+  [limitations](docs/limitations.md).
 - **`-search.maxQueryLen`** defaults to 16 KiB; seven SigmaHQ rules
   emit queries above this. Raise the flag at VL startup if you need
   them: `victoria-logs -search.maxQueryLen=524288 ...`

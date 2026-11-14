@@ -196,6 +196,70 @@ correlation:
         gte: 10
 """,
     ),
+    (
+        "temporal_correlation",
+        """
+title: parent_a
+name: parent_a
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: x
+    condition: sel
+---
+title: parent_b
+name: parent_b
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldB: y
+    condition: sel
+---
+title: corr
+status: test
+correlation:
+    type: temporal
+    rules:
+      - parent_a
+      - parent_b
+    group-by: fieldC
+    timespan: 5m
+""",
+    ),
+    (
+        "temporal_ordered_correlation",
+        """
+title: parent_a
+name: parent_a
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldA: x
+    condition: sel
+---
+title: parent_b
+name: parent_b
+status: test
+logsource: { category: test }
+detection:
+    sel:
+        fieldB: y
+    condition: sel
+---
+title: corr
+status: test
+correlation:
+    type: temporal_ordered
+    rules:
+      - parent_a
+      - parent_b
+    group-by: fieldC
+    timespan: 5m
+""",
+    ),
 ]
 
 

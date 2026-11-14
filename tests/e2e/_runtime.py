@@ -171,3 +171,45 @@ def logsql_count(url: str, query: str) -> int:
     last = body.splitlines()[-1]
     obj = json.loads(last)
     return int(obj.get("n", 0))
+
+
+def ingest_fixture_rebased(
+    url: str,
+    rows: list[dict[str, Any]],
+    *,
+    stream_fields: str,
+    dataset_label: str,
+) -> int:
+    """POST fixture rows with ``_time`` rebased so the last row is ~now.
+
+    Fixture rows carry ``offset_ms`` from the start of the captured slice. Each
+    row is placed at ``now - (span - offset_ms)``, which preserves the real
+    spacing while placing the slice inside a ``_time:5m`` query window.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    span = max(row["offset_ms"] for row in rows)
+    now = datetime.now(timezone.utc)
+    lines: list[bytes] = []
+    for row in rows:
+        event = {key: value for key, value in row.items() if key != "offset_ms"}
+        event["_time"] = (
+            (now - timedelta(milliseconds=span - row["offset_ms"]))
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        event["dataset_label"] = dataset_label
+        lines.append(json.dumps(event, separators=(",", ":")).encode("utf-8"))
+
+    body = b"\n".join(lines) + b"\n"
+    qs = urllib.parse.urlencode({"_stream_fields": stream_fields})
+    req = urllib.request.Request(
+        f"{url}/insert/jsonline?{qs}",
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/stream+json"},
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        if resp.status >= 300:
+            raise RuntimeError(f"ingest failed: HTTP {resp.status}: {resp.read()!r}")
+    return len(lines)
